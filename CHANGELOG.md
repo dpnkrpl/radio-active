@@ -9,6 +9,12 @@
 7. Critical bug fixes 🐛
 8. Minor UI fixes
 
+## 4.0.3
+
+1. Fix broken installation on python >=3.13
+2. NOTE: shazam does not work anymore on python version >= 3.13
+
+
 ## 4.0.2
 
 1. More information on the shazam identified track
