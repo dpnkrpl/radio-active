@@ -9,3 +9,4 @@ rich
 pick
 zenlog
 shazamio
+audioop-lts; python_version >= "3.13"
