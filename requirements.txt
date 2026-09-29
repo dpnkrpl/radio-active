@@ -8,4 +8,4 @@ requests-cache
 rich
 pick
 zenlog
-shazamio
+shazamio; python_version < "3.13"

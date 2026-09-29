@@ -39,12 +39,14 @@
 <p align=center> <img src=https://github.com/dpnkrpl/radio-active/assets/27947066/358d5c7f-c501-4335-873b-a9a1dc45cd69 width=600px> </p>
 
 
+> NOTE: !!! on python version >=3.13 shazam does not work. Will fix soon. To use recording feature use `pipx install --python python3.12 radio-active` !!!
+
 ### Features
 
 - [x] Supports more than 40K stations !! :radio:
 - [x] Record audio from live radio on demand :zap:
 - [x] Get song information on run-time 🎶
-- [x] Shazam identification of tracks
+- [x] Shazam identification of tracks (Python version < 3.13)
 - [x] Saves last station information
 - [x] Favorite stations :heart:
 - [x] Selection menu for favorite stations
