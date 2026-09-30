@@ -132,10 +132,25 @@ def handle_station_selection_menu(handler, last_station, alias) -> Tuple[str, st
         return handle_station_uuid_play(handler, station_uuid)
 
 
-def get_key():
-    """Helper to capture single key on Linux and Windows."""
+def get_key(timeout: Optional[float] = None) -> Optional[str]:
+    """Helper to capture single key on Linux and Windows with optional timeout in seconds."""
+    if not sys.stdin.isatty():
+        try:
+            line = sys.stdin.readline()
+            return line.strip() if line else None
+        except Exception:
+            return None
+
     if sys.platform == "win32":
         import msvcrt
+        import time
+
+        if timeout is not None:
+            start_t = time.time()
+            while not msvcrt.kbhit():
+                if time.time() - start_t >= timeout:
+                    return None
+                time.sleep(0.05)
 
         ch = msvcrt.getch()
         if ch in [b"\x00", b"\xe0"]:  # Special keys
@@ -154,24 +169,34 @@ def get_key():
         except (UnicodeDecodeError, ValueError):
             return ""
     else:
+        import select
         import termios
         import tty
 
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
-            tty.setraw(sys.stdin.fileno())
+            tty.setraw(fd)
+            if timeout is not None:
+                r, _, _ = select.select([fd], [], [], timeout)
+                if not r:
+                    return None
+
             ch = sys.stdin.read(1)
             if ch == "\x1b":  # Escape sequence
-                seq = sys.stdin.read(2)
-                ch += seq
+                r, _, _ = select.select([fd], [], [], 0.05)
+                if r:
+                    seq = sys.stdin.read(2)
+                    ch += seq
+            return ch
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return ch
 
 
-def handle_vim_style_prompt(alias, history) -> str:
+def handle_vim_style_prompt(alias, history, inactivity_timeout: float = 15.0) -> str:
     """Captured VIM style command prompt with fuzzy search and completions."""
+    import time
+
     from rich.live import Live
     from rich.text import Text
 
@@ -218,6 +243,7 @@ def handle_vim_style_prompt(alias, history) -> str:
     station_names = sorted(list(set([n for n in station_names if n])))
 
     buffer = ""
+    start_idle_time = time.time()
 
     def get_display(text, matches=None):
         if matches is None:
@@ -251,7 +277,20 @@ def handle_vim_style_prompt(alias, history) -> str:
 
     with Live(get_display(""), transient=True, refresh_per_second=10) as live:
         while True:
-            char = get_key()
+            char = get_key(timeout=0.5)
+
+            if char is None:
+                # Idle slice - check if 15s inactivity timeout reached
+                if (
+                    not buffer
+                    and inactivity_timeout
+                    and (time.time() - start_idle_time >= inactivity_timeout)
+                ):
+                    return "z"
+                continue
+
+            # Key was pressed, reset idle timer
+            start_idle_time = time.time()
 
             # Find current matches for logic below
             cmd_matches = [m for m in completions if buffer and m.startswith(buffer)]
@@ -632,7 +671,8 @@ def handle_listen_keypress(
             continue
 
         elif user_input in ["z", "Z", "zenmode"]:
-            handle_zen_mode()
+            current_vol = player.volume if player else volume
+            handle_zen_mode(volume=current_vol)
             continue
 
         elif user_input in ["th", "TH", "theme", "THEME", "themes"]:

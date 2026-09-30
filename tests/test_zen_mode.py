@@ -31,3 +31,30 @@ def test_handle_zen_mode_interactive_exit(capsys):
          patch("tty.setcbreak"), \
          patch("termios.tcsetattr"):
         handle_zen_mode()
+
+
+def test_handle_zen_mode_with_volume_and_metadata(capsys):
+    set_global_station_info(
+        {
+            "name": "Jazz FM",
+            "tags": "jazz,smooth",
+            "codec": "AAC",
+            "bitrate": "320",
+            "country": "United Kingdom",
+            "volume": 75,
+        }
+    )
+
+    with patch("sys.stdin.isatty", return_value=False), \
+         patch("sys.stdout.isatty", return_value=False):
+        handle_zen_mode(volume=90)
+
+
+def test_handle_vim_style_prompt_inactivity_timeout():
+    from radioactive.utilities import handle_vim_style_prompt
+
+    # Mock get_key returning None (simulating timeout on input)
+    with patch("radioactive.utilities.get_key", return_value=None):
+        # Setting inactivity_timeout to a tiny duration so it triggers immediately
+        res = handle_vim_style_prompt(alias=None, history=None, inactivity_timeout=0.01)
+        assert res == "z"

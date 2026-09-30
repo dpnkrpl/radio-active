@@ -235,7 +235,7 @@ def handle_show_station_info() -> None:
         log.error(f"No station information available: {e}")
 
 
-def handle_zen_mode() -> None:
+def handle_zen_mode(volume: int = None) -> None:
     """Show an animated, dynamic 'Zen' audio visualizer display."""
     try:
         import math
@@ -269,9 +269,46 @@ def handle_zen_mode() -> None:
 
         codec = global_current_station_info.get("codec")
         bitrate = global_current_station_info.get("bitrate")
-        codec_info = ""
+        country = global_current_station_info.get("country")
+        language = global_current_station_info.get("language")
+
+        info_badges = []
         if codec or bitrate:
-            codec_info = f"{codec or ''} • {bitrate or ''} kbps".strip(" • ")
+            codec_str = str(codec) if codec and str(codec).strip() != "" else "AUDIO"
+            bitrate_str = (
+                f"{bitrate} kbps" if bitrate and str(bitrate).strip() != "" else ""
+            )
+            if bitrate_str:
+                info_badges.append(f"⚡ {codec_str} • {bitrate_str}")
+            else:
+                info_badges.append(f"⚡ {codec_str}")
+        if country and str(country).strip() not in ["", "None", "N/A"]:
+            info_badges.append(f"🌍 {str(country).strip()}")
+        elif language and str(language).strip() not in ["", "None", "N/A"]:
+            info_badges.append(f"🗣️ {str(language).strip()}")
+
+        # Retrieve active volume
+        if volume is None:
+            vol_val = global_current_station_info.get("volume", 80)
+        else:
+            vol_val = volume
+
+        try:
+            clamped_vol = max(0, min(100, int(vol_val)))
+        except (ValueError, TypeError):
+            clamped_vol = 80
+
+        total_vol_bars = 10
+        filled_vol_bars = round(clamped_vol / 10)
+        unfilled_vol_bars = total_vol_bars - filled_vol_bars
+        if clamped_vol == 0:
+            vol_icon = "🔇"
+        elif clamped_vol <= 30:
+            vol_icon = "🔈"
+        elif clamped_vol <= 70:
+            vol_icon = "🔉"
+        else:
+            vol_icon = "🔊"
 
         num_bars = 28
         max_height = 6
@@ -306,9 +343,21 @@ def handle_zen_mode() -> None:
             )
             if clean_tags:
                 content.append(f"{clean_tags}\n", style="dim white")
-            if codec_info:
-                content.append(f"{codec_info}\n", style="italic dim white")
-            content.append("\n")
+            if info_badges:
+                badges_text = "  |  ".join(info_badges)
+                content.append(f"{badges_text}\n", style="italic cyan")
+
+            # Volume slider line
+            vol_line = Text()
+            vol_line.append(f"\n{vol_icon} Volume: [", style=f"bold {theme.text}")
+            for i in range(filled_vol_bars):
+                color_idx = min(
+                    int((i / total_vol_bars) * len(colors)), len(colors) - 1
+                )
+                vol_line.append("▰", style=f"bold {colors[color_idx]}")
+            vol_line.append("▱" * unfilled_vol_bars, style=theme.dim)
+            vol_line.append(f"] {clamped_vol}%\n\n", style=f"bold {theme.primary}")
+            content.append_text(vol_line)
 
             # Equalizer bars
             for r in range(max_height, 0, -1):
