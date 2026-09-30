@@ -446,6 +446,9 @@ class AutoFetcher:
                 current_song = get_current_track_name(self.target_url)
                 if current_song and current_song != self.last_song:
                     station_info = get_global_station_info()
+                    station_info["track"] = current_song
+                    station_info["title"] = current_song
+                    set_global_station_info(station_info)
                     station_name = station_info.get("name", "Unknown Station")
 
                     notification_title = f"Now Playing on {station_name}"

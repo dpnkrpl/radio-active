@@ -246,14 +246,19 @@ ZEN_VISUALIZER_STYLES = [
 ]
 
 
-def handle_zen_mode(volume: Optional[int] = None, style: Optional[int] = None) -> None:
-    """Show an animated, dynamic 'Zen' audio visualizer display with multiple retro styles."""
+def handle_zen_mode(
+    volume: Optional[int] = None,
+    style: Optional[int] = None,
+    track: Optional[str] = None,
+) -> None:
+    """Show an animated, dynamic 'Zen' audio visualizer display with multiple retro styles and live marquee."""
     global _current_zen_style
     try:
         import math
         import random
         import select
         import sys
+        import threading
         import time
 
         from rich.align import Align
@@ -337,6 +342,32 @@ def handle_zen_mode(volume: Optional[int] = None, style: Optional[int] = None) -
         peaks = [0.0] * num_bars
         levels_current = [1.0] * num_bars
 
+        # Background track title poller for live ICY-metadata
+        station_url = global_current_station_info.get(
+            "url_resolved"
+        ) or global_current_station_info.get("url")
+        stop_poller = False
+
+        if station_url and str(station_url).startswith("http"):
+            from radioactive.actions import get_current_track_name
+
+            def _poll_track():
+                while not stop_poller:
+                    try:
+                        fetched = get_current_track_name(station_url)
+                        if fetched and str(fetched).strip() != "":
+                            global_current_station_info["track"] = str(fetched).strip()
+                            global_current_station_info["title"] = str(fetched).strip()
+                    except Exception:
+                        pass
+                    for _ in range(80):
+                        if stop_poller:
+                            break
+                        time.sleep(0.1)
+
+            poller_thread = threading.Thread(target=_poll_track, daemon=True)
+            poller_thread.start()
+
         def generate_frame(t: float, cur_style: int) -> Panel:
             content = Text(justify="center")
             content.append(
@@ -347,6 +378,40 @@ def handle_zen_mode(volume: Optional[int] = None, style: Optional[int] = None) -
             if info_badges:
                 badges_text = "  |  ".join(info_badges)
                 content.append(f"{badges_text}\n", style="italic cyan")
+
+            # Active Track Marquee / Scrolling Ticker
+            current_track = track
+            if not current_track:
+                current_track = (
+                    global_current_station_info.get("track")
+                    or global_current_station_info.get("song")
+                    or global_current_station_info.get("stream_title")
+                    or global_current_station_info.get("icy_title")
+                )
+                if not current_track:
+                    cand_title = global_current_station_info.get("title")
+                    if (
+                        cand_title
+                        and str(cand_title).strip() != ""
+                        and str(cand_title).strip().lower()
+                        != str(display_name).strip().lower()
+                    ):
+                        current_track = str(cand_title).strip()
+
+            if current_track and str(current_track).strip() != "":
+                clean_track = str(current_track).strip()
+                ticker_width = 46
+                padded = f"{clean_track}   ★   "
+                offset = int(t * 3.2) % len(padded)
+                extended = padded * 4
+                ticker_text = extended[offset : offset + ticker_width]
+
+                marquee_line = Text()
+                marquee_line.append("\n🎵 Now Playing: ", style=f"bold {theme.accent}")
+                marquee_line.append("[ ", style=theme.dim)
+                marquee_line.append(ticker_text, style=f"bold {theme.text}")
+                marquee_line.append(" ]", style=theme.dim)
+                content.append_text(marquee_line)
 
             # Volume slider line
             vol_line = Text()
@@ -641,6 +706,7 @@ def handle_zen_mode(volume: Optional[int] = None, style: Optional[int] = None) -
                     time.sleep(0.04)
 
         finally:
+            stop_poller = True
             if old_settings is not None and fd is not None:
                 import termios
 

@@ -102,6 +102,15 @@ def handle_fetch_song_title(url: str) -> None:
 
     if track_name != "":
         log.info(f"🎶: {track_name}")
+        try:
+            from radioactive.ui import get_global_station_info, set_global_station_info
+
+            info = get_global_station_info()
+            info["track"] = track_name
+            info["title"] = track_name
+            set_global_station_info(info)
+        except Exception:
+            pass
     else:
         log.error("No track information available")
 

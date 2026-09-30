@@ -84,6 +84,22 @@ def test_handle_zen_mode_space_cycle_and_exit():
         handle_zen_mode(style=0)
 
 
+def test_handle_zen_mode_with_track_marquee(capsys):
+    set_global_station_info(
+        {
+            "name": "Lofi Girl",
+            "tags": "lofi,hiphop",
+            "track": "Kavv - Midnight Bloom",
+            "url_resolved": "http://stream.example.com/radio.mp3",
+            "volume": 70,
+        }
+    )
+
+    with patch("sys.stdin.isatty", return_value=False), \
+         patch("sys.stdout.isatty", return_value=False):
+        handle_zen_mode(track="Kavv - Midnight Bloom")
+
+
 def test_handle_vim_style_prompt_inactivity_timeout():
     from radioactive.utilities import handle_vim_style_prompt
 
