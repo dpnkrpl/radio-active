@@ -226,75 +226,171 @@ def handle_show_station_info() -> None:
 
 
 def handle_zen_mode() -> None:
-    """Show a minimalist 'Zen' display of the current station."""
+    """Show an animated, dynamic 'Zen' audio visualizer display."""
     try:
+        import math
+        import random
+        import select
+        import sys
+        import time
+
+        from rich.align import Align
         from rich.console import Console
+        from rich.live import Live
         from rich.panel import Panel
         from rich.text import Text
 
-        # Beautiful Zen emojis
-        emojis = ["✨", "🧘", "🌊", "🍃", "🌙", "☁️", "🎵", "🎧"]
-        import random
-
-        from rich.align import Align
-
-        icon = random.choice(emojis)
-
         console = Console()
-        with console.screen():
-            # defensive retrieval of the name
-            name = global_current_station_info.get("name")
-            if not name or str(name).strip().upper() in ["N/A", "NONE", "UNKNOWN"]:
-                # fallback, check if we have it anywhere else?
-                display_name = "Unknown Station"
-            else:
-                display_name = str(name).strip()
 
-            # Create a stylized station name
-            zen_text = Text(justify="center")
+        # Retrieve station metadata
+        name = global_current_station_info.get("name")
+        if not name or str(name).strip().upper() in ["N/A", "NONE", "UNKNOWN"]:
+            display_name = "Unknown Station"
+        else:
+            display_name = str(name).strip()
 
-            # Beautiful Wave Decoration
-            wave = " ▂ ▃ ▅ ▆ █ █ ▆ ▅ ▃ ▂ "
-            # zen_text.append(f"\n{wave}\n\n", style="bold white")
+        tags = global_current_station_info.get("tags")
+        clean_tags = ""
+        if tags and str(tags).strip() != "":
+            clean_tags = str(tags).replace(",", " • ").strip()
+            if len(clean_tags) > 65:
+                clean_tags = clean_tags[:62] + "..."
 
-            zen_text.append(f"{icon} ", style="bold yellow")
-            zen_text.append(display_name.upper(), style="bold white")
-            zen_text.append(f" {icon}\n", style="bold yellow")
+        codec = global_current_station_info.get("codec")
+        bitrate = global_current_station_info.get("bitrate")
+        codec_info = ""
+        if codec or bitrate:
+            codec_info = f"{codec or ''} • {bitrate or ''} kbps".strip(" • ")
 
-            # Add more data if available
-            tags = global_current_station_info.get("tags")
-            if tags and str(tags).strip() != "":
-                clean_tags = str(tags).replace(",", " • ").strip()
-                if len(clean_tags) > 70:
-                    clean_tags = clean_tags[:67] + "..."
-                zen_text.append(f"\n{clean_tags}\n", style="dim white")
+        num_bars = 28
+        max_height = 6
+        colors = ["#00f5d4", "#00b4d8", "#7209b7", "#ffbd00", "#ff5400", "#ff0054"]
+        peaks = [0.0] * num_bars
+        levels_current = [1.0] * num_bars
 
-            codec = global_current_station_info.get("codec")
-            bitrate = global_current_station_info.get("bitrate")
-            if codec or bitrate:
-                info_line = f"\n{codec or ''} • {bitrate or ''} kbps".strip(" • ")
-                zen_text.append(info_line, style="italic dim white")
+        def generate_frame(t: float) -> Panel:
+            for i in range(num_bars):
+                freq = 0.25 + (i / num_bars) * 1.2
+                target = (
+                    math.sin(t * 3.5 * freq + i * 0.4) * 2.2
+                    + math.cos(t * 1.8 - i * 0.3) * 1.6
+                    + random.uniform(0.2, 1.8)
+                )
+                target = max(0.2, min(float(max_height), target))
+                levels_current[i] += (target - levels_current[i]) * 0.45
+                val = levels_current[i]
 
-            # zen_text.append(f"\n\n{wave}\n", style="bold white")
+                if val > peaks[i]:
+                    peaks[i] = val
+                else:
+                    peaks[i] = max(0.0, peaks[i] - 0.22)
 
-            zen_panel = Panel(
-                zen_text,
-                title="[bold white]RADIOACTIVE[/bold white]",
-                subtitle="Press Enter to return",
-                border_style="bold white",
-                padding=(2, 4),
-                width=100,
-                expand=False,
+            content = Text(justify="center")
+            content.append(
+                f"\n✨ {display_name.upper()} ✨\n", style="bold bright_yellow"
             )
+            if clean_tags:
+                content.append(f"{clean_tags}\n", style="dim white")
+            if codec_info:
+                content.append(f"{codec_info}\n", style="italic dim white")
+            content.append("\n")
 
-            # Center vertically with some newlines
-            console.print("\n" * 8)
-            console.print(Align.center(zen_panel))
+            # Equalizer bars
+            for r in range(max_height, 0, -1):
+                row_text = Text()
+                color = colors[r - 1]
+                for i, val in enumerate(levels_current):
+                    if val >= r:
+                        row_text.append("█ ", style=color)
+                    elif val >= r - 0.5:
+                        row_text.append("▄ ", style=color)
+                    elif int(peaks[i]) == r:
+                        row_text.append("━ ", style="bold white")
+                    else:
+                        row_text.append("  ")
+                content.append_text(row_text)
+                content.append("\n")
+
+            # Stereo VU meters
+            vu_left = min(8, max(0, int(levels_current[2] / max_height * 8)))
+            vu_right = min(8, max(0, int(levels_current[5] / max_height * 8)))
+            vu_bar_l = "▰" * vu_left + "▱" * (8 - vu_left)
+            vu_bar_r = "▰" * vu_right + "▱" * (8 - vu_right)
+            content.append(f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n", style="dim cyan")
+
+            panel = Panel(
+                Align.center(content),
+                title="[bold white]:radio: RADIOACTIVE ZEN MODE[/bold white]",
+                subtitle="[dim]Press [bold white]Enter[/bold white] or [bold white]q[/bold white] to return[/dim]",
+                border_style="bold cyan",
+                padding=(1, 2),
+                width=78,
+            )
+            return Align.center(panel, vertical="middle")
+
+        is_tty = sys.stdin.isatty() and sys.stdout.isatty()
+        if not is_tty:
+            # Fallback for non-interactive / tests
+            console.print(generate_frame(0.0))
+            return
+
+        old_settings = None
+        fd = None
+        if sys.platform != "win32":
+            import termios
+            import tty
 
             try:
-                input()
-            except (EOFError, KeyboardInterrupt):
-                pass
+                fd = sys.stdin.fileno()
+                old_settings = termios.tcgetattr(fd)
+                tty.setcbreak(fd)
+            except Exception:
+                old_settings = None
+
+        try:
+            with Live(
+                generate_frame(0.0),
+                console=console,
+                screen=True,
+                refresh_per_second=15,
+            ) as live:
+                start_time = time.time()
+                while True:
+                    t = time.time() - start_time
+                    live.update(generate_frame(t))
+
+                    # Check for exit keypress
+                    key_pressed = False
+                    if sys.platform == "win32":
+                        import msvcrt
+
+                        if msvcrt.kbhit():
+                            key_pressed = True
+                    else:
+                        r, _, _ = select.select([sys.stdin], [], [], 0.05)
+                        if r:
+                            key_pressed = True
+
+                    if key_pressed:
+                        try:
+                            if sys.platform == "win32":
+                                msvcrt.getch()
+                            else:
+                                sys.stdin.read(1)
+                        except Exception:
+                            pass
+                        break
+
+                    time.sleep(0.04)
+
+        finally:
+            if old_settings is not None and fd is not None:
+                import termios
+
+                try:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+                except Exception:
+                    pass
 
     except Exception as e:
         log.error(f"Error in zen mode: {e}")
