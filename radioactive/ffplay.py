@@ -117,38 +117,69 @@ class Ffplay:
 
     def _check_error_output(self) -> None:
         """Monitor stderr for errors."""
+        import re
+
         if not self.process or not self.process.stderr:
             return
 
-        while self.is_running:
+        while self.is_running and self.process and self.process.stderr:
             try:
                 stderr_result = self.process.stderr.readline()
-                if stderr_result:
-                    self._handle_error(stderr_result)
+                if not stderr_result:
+                    if self.process and self.process.poll() is not None:
+                        if self.process.poll() != 0 and self.is_running:
+                            self._handle_error("")
+                            self.is_running = False
+                            self.stop()
+                        break
+                    sleep(0.1)
+                    continue
+
+                # Strip ANSI escape sequences
+                clean_msg = re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", stderr_result).strip()
+
+                # If purely whitespace, escape codes, or macOS CoreAudio escape warnings, ignore
+                if not clean_msg or "Dropped Escape call" in clean_msg:
+                    log.debug(f"ffplay non-fatal stderr: {stderr_result.strip()}")
+                    continue
+
+                # Check if ffplay is still actively running
+                sleep(0.1)
+                if self.process and self.process.poll() is None:
+                    # Process is still alive and playing fine
+                    log.debug(
+                        f"ffplay non-fatal message (playback continuing): {clean_msg}"
+                    )
+                    continue
+
+                # Process has actually exited with error
+                if self.is_running:
+                    self._handle_error(clean_msg)
                     self.is_running = False
                     self.stop()
                     break
+
             except ValueError:
                 # ValueError: I/O operation on closed file.
                 break
-            except Exception:
+            except Exception as e:
+                log.debug(f"Error checking ffplay stderr: {e}")
                 break
 
     def _handle_error(self, stderr_result: str) -> None:
         """Log the error message."""
         print()
         log.error("Could not connect to the station/stream")
-        try:
-            log.debug(stderr_result)
-            parts = stderr_result.split(": ")
-            if len(parts) > 1:
-                log.error(parts[1].strip())
-            else:
-                print()
-                log.error(stderr_result.strip())
-        except Exception as e:
-            log.debug(f"Error parsing stderr: {e}")
-            pass
+        if stderr_result:
+            try:
+                log.debug(stderr_result)
+                parts = stderr_result.split(": ")
+                if len(parts) > 1:
+                    log.error(parts[1].strip())
+                else:
+                    log.error(stderr_result.strip())
+            except Exception as e:
+                log.debug(f"Error parsing stderr: {e}")
 
     def terminate_parent_process(self) -> None:
         """Signal the parent process (main app) to terminate."""
@@ -190,7 +221,6 @@ class Ffplay:
                 self.process = None
         else:
             log.debug("Radio is not currently playing")
-            self.terminate_parent_process()
 
     def toggle(self) -> None:
         """Toggle playback state."""

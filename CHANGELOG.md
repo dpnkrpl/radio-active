@@ -2,12 +2,14 @@
 
 1. Significant improvements on app loading speed :zap:
 2. Recording quality improved 🎶
-3. Faster station lookup
-4. Optimize interaction with external player, improving play/pause time
-5. Improved fuzzy find logic 🔍
-6. Stability improvements for windows
-7. Critical bug fixes 🐛
-8. Minor UI fixes
+3. Added recording library command `rl` which allows you to play, delete, rename and shazam your recordings
+4. Faster station lookup
+5. Fix playback issues with ffplay
+6. Optimize interaction with external player, improving play/pause time
+7. Improved fuzzy find logic 🔍
+8. Stability improvements for windows
+9. Critical bug fixes 🐛
+10. Minor UI fixes
 
 ## 4.0.3
 
