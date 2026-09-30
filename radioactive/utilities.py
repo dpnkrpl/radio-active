@@ -44,10 +44,12 @@ from radioactive.actions import (
     handle_play_last_station,
     handle_play_random_station,
     handle_record,
+    handle_recording_library,
     handle_save_last_station,
     handle_save_to_history,
     handle_search_stations,
     handle_shazam,
+    handle_shazam_file,
     handle_station_name_from_headers,
     handle_station_uuid_play,
 )
@@ -179,6 +181,7 @@ def handle_vim_style_prompt(alias, history) -> str:
         "i": "station info",
         "r": "record",
         "rf": "record file",
+        "rl": "recording library",
         "f": "add favorite",
         "l": "list favorites",
         "v+": "volume +",
@@ -307,13 +310,14 @@ def handle_runtime_help_menu():
 
         add("p", "Play/Pause current station")
         if TRACK_FEATURE:
-            add("t / track", "Current track info")
+            add("t / track  ", "Current track info")
         if INFO_FEATURE:
             add("i / info", "Station information")
         add("z / zenmode", "Minimalist station display")
         if RECORDING_FEATURE:
             add("r / record", "Record a station")
             add("rf / recordfile", "Specify a filename for the recording")
+            add("rl / library", "Recording library (play, rename, delete, shazam)")
 
         add("f / fav", "Add station to favorite list")
         add("l / list", "Open favorite station selection menu")
@@ -578,6 +582,41 @@ def handle_listen_keypress(
                         loglevel,
                     )
                     handle_recording_popup(process, outfile_path)
+            continue
+
+        elif RECORDING_FEATURE and user_input in [
+            "rl",
+            "RL",
+            "recordings",
+            "library",
+        ]:
+            rec_name, rec_url = handle_recording_library()
+            if rec_url:
+                if player:
+                    player.stop()
+                    player.url = rec_url
+                    player.play()
+                else:
+                    if audio_player == "vlc":
+                        from radioactive.vlc import VLC
+
+                        player = VLC(volume)
+                        player.start(rec_url)
+                    elif audio_player == "mpv":
+                        from radioactive.mpv import MPV
+
+                        player = MPV(volume)
+                        player.start(rec_url)
+                    else:
+                        from radioactive.ffplay import Ffplay
+
+                        player = Ffplay(rec_url, volume, loglevel)
+
+                handle_current_play_panel("🎙️" + rec_name + "🎙️")
+                station_name = rec_name
+                station_url = rec_url
+                target_url = rec_url
+                auto_fetcher.update_url(target_url)
             continue
 
         if INFO_FEATURE and user_input in ["i", "I", "info"]:
