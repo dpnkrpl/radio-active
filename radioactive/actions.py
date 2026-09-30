@@ -722,3 +722,45 @@ def handle_recording_library() -> Tuple[Optional[str], Optional[str]]:
         elif action_idx == 4:
             # Back
             continue
+
+
+def handle_theme_selection() -> Optional[str]:
+    """
+    Interactive UI theme selector.
+    Allows user to switch the active theme at runtime.
+    """
+    from pick import pick
+
+    from radioactive.theme import get_current_theme, set_current_theme
+
+    current = get_current_theme().name
+
+    theme_list = [
+        ("default", "🎨 Default (Classic Magenta / Cyan)"),
+        ("cyberpunk", "⚡ Cyberpunk / Neon (Electric Cyan / Hot Pink)"),
+        ("matrix", "📟 Matrix (Phosphor Green / Black)"),
+        ("amber", "📻 Amber / Retro Hi-Fi (Warm Amber / Gold)"),
+        ("nordic", "❄️  Nordic / Pastel (Ice Blue / Slate Frost)"),
+    ]
+
+    title = "🎨 UI Theme Selector - Select a color theme:\n(Use Up/Down arrows and Enter to apply)"
+    options = ["🔙 [ Cancel / Back ]"]
+    for code, label in theme_list:
+        if code == current:
+            options.append(f"{label}  [active]")
+        else:
+            options.append(label)
+
+    try:
+        _, index = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Theme selection cancelled or error: {e}")
+        return None
+
+    if index == 0:
+        return None
+
+    selected_code = theme_list[index - 1][0]
+    set_current_theme(selected_code)
+    log.info(f"Theme switched to: {selected_code.capitalize()}")
+    return selected_code

@@ -72,4 +72,9 @@ def parse_options() -> Dict[str, Any]:
     options["volume"] = args.volume
     options["audio_player"] = args.audio_player
 
+    options["theme"] = getattr(args, "theme", "default")
+    from radioactive.theme import set_current_theme
+
+    set_current_theme(options["theme"])
+
     return options

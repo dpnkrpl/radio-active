@@ -9,6 +9,8 @@ from rich.table import Table
 from rich.text import Text
 from zenlog import log
 
+from radioactive.theme import get_current_theme
+
 # Global variable to store current station info for display
 # This is shared state, ideally should be managed better, but keeping for compatibility
 global_current_station_info = {}
@@ -16,6 +18,7 @@ global_current_station_info = {}
 
 def handle_welcome_screen() -> None:
     """Print the welcome screen panel."""
+    theme = get_current_theme()
     welcome = Panel(
         """
         :radio: Play any radios around the globe right from this Terminal
@@ -24,7 +27,8 @@ def handle_welcome_screen() -> None:
         :bug: Visit: https://github.com/dpnkrpl/radio-active
         :question: Press ? for help
         """,
-        title="[b]RADIOACTIVE[/b]",
+        title=f"[{theme.title_style}]RADIOACTIVE[/{theme.title_style}]",
+        border_style=theme.border,
         width=100,
         expand=False,
         safe_box=True,
@@ -41,23 +45,25 @@ def handle_update_screen(app) -> None:
         app: The App instance to check for updates.
     """
     if app.is_update_available():
+        theme = get_current_theme()
         local_version = app.get_version()
         remote_version = app.get_remote_version()
 
         update_msg = (
-            f"\t[blink]An update available, run [green][italic]pipx upgrade radio-active"
-            f"[/italic][/green][/blink]\n"
+            f"\t[blink]An update available, run [{theme.success}][italic]pipx upgrade radio-active"
+            f"[/italic][/{theme.success}][/blink]\n"
         )
 
         # Add release notes for all missing versions if available
         release_notes = app.get_release_notes(local_version, remote_version)
         if release_notes:
-            update_msg += f"\n[bold yellow]What's new since v{local_version}:[/bold yellow]\n{release_notes}"
+            update_msg += f"\n[bold {theme.warning}]What's new since v{local_version}:[/bold {theme.warning}]\n{release_notes}"
         else:
             update_msg += f"\nSee all changes: https://github.com/dpnkrpl/radio-active/blob/main/CHANGELOG.md"
 
         update_panel = Panel(
             update_msg,
+            border_style=theme.border,
             width=100,
             expand=False,
         )
@@ -78,20 +84,21 @@ def handle_update_modal(app) -> None:
         from rich.console import Console
         from rich.panel import Panel
 
+        theme = get_current_theme()
         local_version = app.get_version()
         remote_version = app.get_remote_version()
 
         update_msg = (
-            f"[bold green]A new version of radio-active is available![/bold green]\n\n"
-            f"Current version: [yellow]v{local_version}[/yellow]\n"
-            f"Latest version:  [bold green]v{remote_version}[/bold green]\n\n"
+            f"[bold {theme.success}]A new version of radio-active is available![/bold {theme.success}]\n\n"
+            f"Current version: [{theme.warning}]v{local_version}[/{theme.warning}]\n"
+            f"Latest version:  [bold {theme.success}]v{remote_version}[/bold {theme.success}]\n\n"
             f"To update, run:\n[italic]pipx upgrade radio-active[/italic]\n"
         )
 
         # Add release notes if available
         release_notes = app.get_release_notes(local_version, remote_version)
         if release_notes:
-            update_msg += f"\n[bold yellow]What's new since v{local_version}:[/bold yellow]\n{release_notes}"
+            update_msg += f"\n[bold {theme.warning}]What's new since v{local_version}:[/bold {theme.warning}]\n{release_notes}"
         else:
             update_msg += f"\nSee all changes: https://github.com/dpnkrpl/radio-active/blob/main/CHANGELOG.md"
 
@@ -99,9 +106,9 @@ def handle_update_modal(app) -> None:
         with console.screen():
             info_panel = Panel(
                 update_msg,
-                title="[bold white]🚀 Update Available[/bold white]",
+                title=f"[{theme.title_style}]🚀 Update Available[/{theme.title_style}]",
                 subtitle="Press Enter to continue",
-                border_style="green",
+                border_style=theme.border,
                 padding=(1, 4),
                 width=100,
                 expand=False,
@@ -127,9 +134,10 @@ def handle_favorite_table(alias) -> None:
     Args:
         alias: The Alias instance containing the favorite map.
     """
+    theme = get_current_theme()
     table = Table(
         show_header=True,
-        header_style="bold magenta",
+        header_style=theme.header_style,
         width=100,
         safe_box=False,
         expand=False,
@@ -153,9 +161,10 @@ def handle_history_table(history) -> None:
     Args:
         history: The History instance containing the history list.
     """
+    theme = get_current_theme()
     table = Table(
         show_header=True,
-        header_style="bold magenta",
+        header_style=theme.header_style,
         width=100,
         safe_box=False,
         expand=False,
@@ -179,11 +188,12 @@ def handle_show_station_info() -> None:
         from rich.panel import Panel
         from rich.table import Table
 
+        theme = get_current_theme()
         console = Console()
         with console.screen():
             table = Table(box=None, padding=(0, 2), show_header=False)
-            table.add_column("Property", style="cyan", justify="left")
-            table.add_column("Value", style="white")
+            table.add_column("Property", style=theme.secondary, justify="left")
+            table.add_column("Value", style=theme.text)
 
             # Map internal keys to display labels
             fields = [
@@ -206,9 +216,9 @@ def handle_show_station_info() -> None:
 
             info_panel = Panel(
                 table,
-                title="[bold white]:radio: Station Information[/bold white]",
+                title=f"[{theme.title_style}]:radio: Station Information[/{theme.title_style}]",
                 subtitle="Press Enter to return",
-                border_style="white",
+                border_style=theme.border,
                 padding=(1, 4),
                 expand=False,
             )
@@ -240,6 +250,7 @@ def handle_zen_mode() -> None:
         from rich.panel import Panel
         from rich.text import Text
 
+        theme = get_current_theme()
         console = Console()
 
         # Retrieve station metadata
@@ -264,7 +275,11 @@ def handle_zen_mode() -> None:
 
         num_bars = 28
         max_height = 6
-        colors = ["#00f5d4", "#00b4d8", "#7209b7", "#ffbd00", "#ff5400", "#ff0054"]
+        colors = (
+            theme.visualizer_bars
+            if theme.visualizer_bars
+            else ["#00f5d4", "#00b4d8", "#7209b7", "#ffbd00", "#ff5400", "#ff0054"]
+        )
         peaks = [0.0] * num_bars
         levels_current = [1.0] * num_bars
 
@@ -287,7 +302,7 @@ def handle_zen_mode() -> None:
 
             content = Text(justify="center")
             content.append(
-                f"\n✨ {display_name.upper()} ✨\n", style="bold bright_yellow"
+                f"\n✨ {display_name.upper()} ✨\n", style=theme.visualizer_title_style
             )
             if clean_tags:
                 content.append(f"{clean_tags}\n", style="dim white")
@@ -305,7 +320,7 @@ def handle_zen_mode() -> None:
                     elif val >= r - 0.5:
                         row_text.append("▄ ", style=color)
                     elif int(peaks[i]) == r:
-                        row_text.append("━ ", style="bold white")
+                        row_text.append("━ ", style=theme.text)
                     else:
                         row_text.append("  ")
                 content.append_text(row_text)
@@ -316,13 +331,16 @@ def handle_zen_mode() -> None:
             vu_right = min(8, max(0, int(levels_current[5] / max_height * 8)))
             vu_bar_l = "▰" * vu_left + "▱" * (8 - vu_left)
             vu_bar_r = "▰" * vu_right + "▱" * (8 - vu_right)
-            content.append(f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n", style="dim cyan")
+            content.append(
+                f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
+                style=theme.visualizer_meter_style,
+            )
 
             panel = Panel(
                 Align.center(content),
-                title="[bold white]:radio: RADIOACTIVE ZEN MODE[/bold white]",
+                title=f"[{theme.title_style}]:radio: RADIOACTIVE ZEN MODE[/{theme.title_style}]",
                 subtitle="[dim]Press [bold white]Enter[/bold white] or [bold white]q[/bold white] to return[/dim]",
-                border_style="bold cyan",
+                border_style=theme.border,
                 padding=(1, 2),
                 width=78,
             )
@@ -409,26 +427,28 @@ def handle_recording_popup(process, outfile_path) -> None:
         from rich.panel import Panel
         from rich.table import Table
 
+        theme = get_current_theme()
         console = Console()
         filename = os.path.basename(outfile_path)
         directory = os.path.dirname(outfile_path)
 
         with console.screen():
             table = Table(box=None, padding=(0, 2), show_header=False)
-            table.add_column("Prop", style="cyan", justify="right")
-            table.add_column("Val", style="white")
+            table.add_column("Prop", style=theme.secondary, justify="right")
+            table.add_column("Val", style=theme.text)
 
             table.add_row("File Name:", filename)
             table.add_row("Directory:", directory)
             table.add_row(
-                "Status:", "[blink][bold red]● Recording ... [/bold red][/blink]"
+                "Status:",
+                f"[blink][{theme.error}]● Recording ... [/{theme.error}][/blink]",
             )
 
             info_panel = Panel(
                 table,
-                title="[bold white]RADIOACTIVE[/bold white]",
+                title=f"[{theme.title_style}]RADIOACTIVE[/{theme.title_style}]",
                 subtitle="Press Enter to STOP recording",
-                border_style="white",
+                border_style=theme.border,
                 padding=(1, 4),
                 width=100,
                 expand=False,
@@ -454,9 +474,6 @@ def handle_recording_popup(process, outfile_path) -> None:
                     process.terminate()
                     process.wait()
                     break
-
-        # finalize UI after stop or process ends
-        # log.info(f"Recording saved at: {outfile_path}")
 
     except Exception as e:
         log.error(f"Error in recording popup: {e}")
@@ -497,11 +514,12 @@ def handle_shazam_popup(result: dict) -> None:
                     elif item.get("title") == "Label":
                         label = item.get("text", "N/A")
 
+        theme = get_current_theme()
         console = Console()
         with console.screen():
             table = Table(box=None, padding=(0, 2), show_header=False)
-            table.add_column("Property", style="cyan", justify="right")
-            table.add_column("Value", style="white")
+            table.add_column("Property", style=theme.secondary, justify="right")
+            table.add_column("Value", style=theme.text)
 
             table.add_row("Title:", f"[bold]{title}[/bold]")
             table.add_row("Artist:", artist)
@@ -513,9 +531,9 @@ def handle_shazam_popup(result: dict) -> None:
 
             info_panel = Panel(
                 table,
-                title="[bold white]🎵 Song Identified[/bold white]",
+                title=f"[{theme.title_style}]🎵 Song Identified[/{theme.title_style}]",
                 subtitle="Press Enter to return",
-                border_style="white",
+                border_style=theme.border,
                 padding=(1, 4),
                 width=100,
                 expand=False,
@@ -551,9 +569,15 @@ def handle_current_play_panel(curr_station_name: str = "") -> None:
     if len(display_name) > 30:
         display_name = display_name[:27] + "..."
 
-    panel_station_name = Text(display_name, justify="center")
+    theme = get_current_theme()
+    panel_station_name = Text(display_name, justify="center", style=theme.accent)
 
-    station_panel = Panel(panel_station_name, title="[blink]:radio:[/blink]", width=72)
+    station_panel = Panel(
+        panel_station_name,
+        title="[blink]:radio:[/blink]",
+        border_style=theme.border,
+        width=72,
+    )
     console = Console()
     console.print(station_panel)
 

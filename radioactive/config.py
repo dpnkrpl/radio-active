@@ -30,6 +30,7 @@ def write_a_sample_config_file() -> None:
         "filepath": os.path.join("{home}", "radioactive", "recordings"),
         "filetype": "mp3",
         "player": "ffplay",
+        "theme": "default",
     }
 
     try:
@@ -102,6 +103,7 @@ class Configs:
 
             options["filetype"] = get_option("filetype", "mp3")
             options["player"] = get_option("player", "ffplay")
+            options["theme"] = get_option("theme", "default")
 
             return options
 

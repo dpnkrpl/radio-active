@@ -52,6 +52,7 @@ from radioactive.actions import (
     handle_shazam_file,
     handle_station_name_from_headers,
     handle_station_uuid_play,
+    handle_theme_selection,
 )
 from radioactive.ffplay import kill_background_ffplays
 
@@ -192,6 +193,9 @@ def handle_vim_style_prompt(alias, history) -> str:
         "a": "auto track info",
         "sz": "shazam identify",
         "shazam": "shazam identify",
+        "th": "theme selector",
+        "theme": "theme selector",
+        "themes": "theme selector",
         "timer": "timer",
         "sleep": "sleep",
         "b": "background",
@@ -298,11 +302,14 @@ def handle_runtime_help_menu():
     from rich.panel import Panel
     from rich.table import Table
 
+    from radioactive.theme import get_current_theme
+
+    theme = get_current_theme()
     console = Console()
     with console.screen():
         table = Table(box=None, expand=False, border_style="dim")
-        table.add_column("Command", style="bold cyan", justify="left")
-        table.add_column("Description", style="green", justify="left")
+        table.add_column("Command", style=f"bold {theme.secondary}", justify="left")
+        table.add_column("Description", style=theme.success, justify="left")
 
         # Helper to simplify adding rows
         def add(cmd, desc):
@@ -331,6 +338,7 @@ def handle_runtime_help_menu():
         if TRACK_FEATURE:
             add("a / auto", "Fetch track info every 10s")
         add("sz / shazam", "Identify current song using Shazam")
+        add("th / theme", "Select UI color theme")
         if TIMER_FEATURE:
             add("timer / sleep", "Set a sleep timer")
 
@@ -341,9 +349,9 @@ def handle_runtime_help_menu():
         # Center the table within a panel
         help_panel = Panel(
             table,
-            title="[bold white]:radio: Available Runtime Commands[/bold white]",
+            title=f"[{theme.title_style}]:radio: Available Runtime Commands[/{theme.title_style}]",
             subtitle="Press Enter to return",
-            border_style="white",
+            border_style=theme.border,
             expand=False,
             padding=(1, 4),
         )
@@ -625,6 +633,12 @@ def handle_listen_keypress(
 
         elif user_input in ["z", "Z", "zenmode"]:
             handle_zen_mode()
+            continue
+
+        elif user_input in ["th", "TH", "theme", "THEME", "themes"]:
+            handle_theme_selection()
+            if station_name and station_name != "N/A":
+                handle_current_play_panel(station_name)
             continue
 
         elif TIMER_FEATURE and user_input in ["timer", "sleep"]:

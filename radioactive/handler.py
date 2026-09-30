@@ -90,9 +90,12 @@ def print_table(
         log.debug("Not filtering")
 
     if response:
+        from radioactive.theme import get_current_theme
+
+        theme = get_current_theme()
         table = Table(
             show_header=True,
-            header_style="magenta",
+            header_style=theme.header_style,
             expand=True,
             min_width=85,
             safe_box=True,
