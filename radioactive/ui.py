@@ -2,6 +2,8 @@
 UI components for radio-active using Rich.
 """
 
+from typing import Any, Dict, List, Optional
+
 from rich import print
 from rich.console import Console
 from rich.panel import Panel
@@ -235,8 +237,18 @@ def handle_show_station_info() -> None:
         log.error(f"No station information available: {e}")
 
 
-def handle_zen_mode(volume: int = None) -> None:
-    """Show an animated, dynamic 'Zen' audio visualizer display."""
+_current_zen_style = 0
+ZEN_VISUALIZER_STYLES = [
+    "Spectrum Bars",
+    "Waveform Oscilloscope",
+    "Retro Tape Deck",
+    "Dot Matrix Peaks",
+]
+
+
+def handle_zen_mode(volume: Optional[int] = None, style: Optional[int] = None) -> None:
+    """Show an animated, dynamic 'Zen' audio visualizer display with multiple retro styles."""
+    global _current_zen_style
     try:
         import math
         import random
@@ -252,6 +264,11 @@ def handle_zen_mode(volume: int = None) -> None:
 
         theme = get_current_theme()
         console = Console()
+
+        if style is not None:
+            active_style = style % len(ZEN_VISUALIZER_STYLES)
+        else:
+            active_style = _current_zen_style
 
         # Retrieve station metadata
         name = global_current_station_info.get("name")
@@ -320,23 +337,7 @@ def handle_zen_mode(volume: int = None) -> None:
         peaks = [0.0] * num_bars
         levels_current = [1.0] * num_bars
 
-        def generate_frame(t: float) -> Panel:
-            for i in range(num_bars):
-                freq = 0.25 + (i / num_bars) * 1.2
-                target = (
-                    math.sin(t * 3.5 * freq + i * 0.4) * 2.2
-                    + math.cos(t * 1.8 - i * 0.3) * 1.6
-                    + random.uniform(0.2, 1.8)
-                )
-                target = max(0.2, min(float(max_height), target))
-                levels_current[i] += (target - levels_current[i]) * 0.45
-                val = levels_current[i]
-
-                if val > peaks[i]:
-                    peaks[i] = val
-                else:
-                    peaks[i] = max(0.0, peaks[i] - 0.22)
-
+        def generate_frame(t: float, cur_style: int) -> Panel:
             content = Text(justify="center")
             content.append(
                 f"\n✨ {display_name.upper()} ✨\n", style=theme.visualizer_title_style
@@ -359,36 +360,219 @@ def handle_zen_mode(volume: int = None) -> None:
             vol_line.append(f"] {clamped_vol}%\n\n", style=f"bold {theme.primary}")
             content.append_text(vol_line)
 
-            # Equalizer bars
-            for r in range(max_height, 0, -1):
-                row_text = Text()
-                color = colors[r - 1]
-                for i, val in enumerate(levels_current):
-                    if val >= r:
-                        row_text.append("█ ", style=color)
-                    elif val >= r - 0.5:
-                        row_text.append("▄ ", style=color)
-                    elif int(peaks[i]) == r:
-                        row_text.append("━ ", style=theme.text)
+            # --- STYLE 0: SPECTRUM BARS ---
+            if cur_style == 0:
+                for i in range(num_bars):
+                    freq = 0.25 + (i / num_bars) * 1.2
+                    target = (
+                        math.sin(t * 3.5 * freq + i * 0.4) * 2.2
+                        + math.cos(t * 1.8 - i * 0.3) * 1.6
+                        + random.uniform(0.2, 1.8)
+                    )
+                    target = max(0.2, min(float(max_height), target))
+                    levels_current[i] += (target - levels_current[i]) * 0.45
+                    val = levels_current[i]
+
+                    if val > peaks[i]:
+                        peaks[i] = val
                     else:
-                        row_text.append("  ")
-                content.append_text(row_text)
+                        peaks[i] = max(0.0, peaks[i] - 0.22)
+
+                for r in range(max_height, 0, -1):
+                    row_text = Text()
+                    color = colors[r - 1]
+                    for i, val in enumerate(levels_current):
+                        if val >= r:
+                            row_text.append("█ ", style=color)
+                        elif val >= r - 0.5:
+                            row_text.append("▄ ", style=color)
+                        elif int(peaks[i]) == r:
+                            row_text.append("━ ", style=theme.text)
+                        else:
+                            row_text.append("  ")
+                    content.append_text(row_text)
+                    content.append("\n")
+
+                vu_left = min(8, max(0, int(levels_current[2] / max_height * 8)))
+                vu_right = min(8, max(0, int(levels_current[5] / max_height * 8)))
+                vu_bar_l = "▰" * vu_left + "▱" * (8 - vu_left)
+                vu_bar_r = "▰" * vu_right + "▱" * (8 - vu_right)
+                content.append(
+                    f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
+                    style=theme.visualizer_meter_style,
+                )
+
+            # --- STYLE 1: WAVEFORM OSCILLOSCOPE ---
+            elif cur_style == 1:
+                wave_width = 56
+                wave_points = []
+                for x in range(wave_width):
+                    y = (
+                        math.sin(t * 4.5 + x * 0.22) * 1.8
+                        + math.cos(t * 2.2 - x * 0.12) * 0.7
+                        + math.sin(t * 7.0 + x * 0.45) * 0.4
+                    )
+                    wave_points.append(2.5 - y)
+
+                for r in range(5, -1, -1):
+                    row_text = Text()
+                    color = colors[min(r, len(colors) - 1)]
+                    for x in range(wave_width):
+                        y_val = wave_points[x]
+                        if abs(y_val - r) < 0.45:
+                            row_text.append("∿", style=f"bold {color}")
+                        elif abs(y_val - r) < 0.9:
+                            row_text.append("≈", style=color)
+                        elif r == 2:
+                            row_text.append("┈", style=f"dim {theme.border}")
+                        else:
+                            row_text.append(" ")
+                    content.append_text(row_text)
+                    content.append("\n")
+
+                vu_val_l = min(
+                    8,
+                    max(0, int((math.sin(t * 3.0) + 1) * 3.5 + random.uniform(0, 1))),
+                )
+                vu_val_r = min(
+                    8,
+                    max(0, int((math.cos(t * 2.8) + 1) * 3.5 + random.uniform(0, 1))),
+                )
+                vu_l = "▰" * vu_val_l + "▱" * (8 - vu_val_l)
+                vu_r = "▰" * vu_val_r + "▱" * (8 - vu_val_r)
+                content.append(
+                    f"\nL: [{vu_l}]   [dim]OSC: 44.1 kHz[/dim]   R: [{vu_r}]\n",
+                    style=theme.visualizer_meter_style,
+                )
+
+            # --- STYLE 2: RETRO REEL-TO-REEL TAPE DECK ---
+            elif cur_style == 2:
+                reel_frames = ["◴", "◷", "◶", "◵"]
+                reel_idx_l = int(t * 8) % len(reel_frames)
+                reel_idx_r = (reel_idx_l + 2) % len(reel_frames)
+                reel_l = reel_frames[reel_idx_l]
+                reel_r = reel_frames[reel_idx_r]
+
+                mins = int(t) // 60
+                secs = int(t) % 60
+                tape_counter = f"{mins:02d}:{secs:02d}"
+
+                tape_motion = int(t * 10) % 4
+                tape_chars = ["══", "──", "━━", "──"]
+                tape_pat = tape_chars[tape_motion] * 17
+
+                tape_border_color = theme.border
+                accent_color = theme.accent
+                primary_color = theme.primary
+
+                inner_w = 54
+                row1 = Text("┌" + "─" * inner_w + "┐", style=tape_border_color)
+                row2 = Text()
+                row2.append("│    ( ", style=tape_border_color)
+                row2.append(f"{reel_l}", style=f"bold {primary_color}")
+                row2.append(" ) ", style=tape_border_color)
+                row2.append(f"{tape_pat}", style=f"bold {accent_color}")
+                row2.append(" ( ", style=tape_border_color)
+                row2.append(f"{reel_r}", style=f"bold {primary_color}")
+                row2.append(" )    │", style=tape_border_color)
+
+                r3_str = " [ REEL A ]       ▶ PLAYING • STEREO       [ REEL B ] "
+                row3 = Text()
+                row3.append("│", style=tape_border_color)
+                row3.append(r3_str.center(inner_w), style=f"dim {theme.text}")
+                row3.append("│", style=tape_border_color)
+
+                r4_str = f"[ TAPE COUNTER: {tape_counter} ]"
+                row4 = Text()
+                row4.append("│", style=tape_border_color)
+                row4.append(r4_str.center(inner_w), style=f"bold {accent_color}")
+                row4.append("│", style=tape_border_color)
+
+                r5_str = "● ● ●  HIGH FIDELITY DOLBY NR  ● ● ●"
+                row5 = Text()
+                row5.append("│", style=tape_border_color)
+                row5.append(r5_str.center(inner_w), style=f"dim {theme.dim}")
+                row5.append("│", style=tape_border_color)
+
+                row6 = Text("└" + "─" * inner_w + "┘", style=tape_border_color)
+
+                content.append_text(row1)
+                content.append("\n")
+                content.append_text(row2)
+                content.append("\n")
+                content.append_text(row3)
+                content.append("\n")
+                content.append_text(row4)
+                content.append("\n")
+                content.append_text(row5)
+                content.append("\n")
+                content.append_text(row6)
                 content.append("\n")
 
-            # Stereo VU meters
-            vu_left = min(8, max(0, int(levels_current[2] / max_height * 8)))
-            vu_right = min(8, max(0, int(levels_current[5] / max_height * 8)))
-            vu_bar_l = "▰" * vu_left + "▱" * (8 - vu_left)
-            vu_bar_r = "▰" * vu_right + "▱" * (8 - vu_right)
-            content.append(
-                f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
-                style=theme.visualizer_meter_style,
-            )
+                vu_val_l = min(
+                    8,
+                    max(0, int((math.sin(t * 3.5) + 1) * 3.5 + random.uniform(0, 1))),
+                )
+                vu_val_r = min(
+                    8,
+                    max(0, int((math.cos(t * 3.2) + 1) * 3.5 + random.uniform(0, 1))),
+                )
+                vu_l = "▰" * vu_val_l + "▱" * (8 - vu_val_l)
+                vu_r = "▰" * vu_val_r + "▱" * (8 - vu_val_r)
+                content.append(
+                    f"\nL: [{vu_l}]   R: [{vu_r}]\n",
+                    style=theme.visualizer_meter_style,
+                )
 
+            # --- STYLE 3: DOT MATRIX PEAKS ---
+            elif cur_style == 3:
+                for i in range(num_bars):
+                    freq = 0.25 + (i / num_bars) * 1.2
+                    target = (
+                        math.sin(t * 3.8 * freq + i * 0.4) * 2.2
+                        + math.cos(t * 2.0 - i * 0.3) * 1.6
+                        + random.uniform(0.2, 1.8)
+                    )
+                    target = max(0.2, min(float(max_height), target))
+                    levels_current[i] += (target - levels_current[i]) * 0.45
+                    val = levels_current[i]
+
+                    if val > peaks[i]:
+                        peaks[i] = val
+                    else:
+                        peaks[i] = max(0.0, peaks[i] - 0.22)
+
+                dot_glyphs = ["·", ":", "⁚", "⁝", "⁞", "●"]
+                for r in range(max_height, 0, -1):
+                    row_text = Text()
+                    color = colors[r - 1]
+                    glyph = dot_glyphs[r - 1]
+                    for i, val in enumerate(levels_current):
+                        if val >= r:
+                            row_text.append(f"{glyph} ", style=f"bold {color}")
+                        elif val >= r - 0.5:
+                            row_text.append("· ", style=color)
+                        elif int(peaks[i]) == r:
+                            row_text.append("· ", style=f"bold {theme.accent}")
+                        else:
+                            row_text.append("· ", style=f"dim {theme.dim}")
+                    content.append_text(row_text)
+                    content.append("\n")
+
+                vu_left = min(8, max(0, int(levels_current[3] / max_height * 8)))
+                vu_right = min(8, max(0, int(levels_current[6] / max_height * 8)))
+                vu_bar_l = "●" * vu_left + "·" * (8 - vu_left)
+                vu_bar_r = "●" * vu_right + "·" * (8 - vu_right)
+                content.append(
+                    f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
+                    style=theme.visualizer_meter_style,
+                )
+
+            style_name = ZEN_VISUALIZER_STYLES[cur_style].upper()
             panel = Panel(
                 Align.center(content),
-                title=f"[{theme.title_style}]:radio: RADIOACTIVE ZEN MODE[/{theme.title_style}]",
-                subtitle="[dim]Press [bold white]Enter[/bold white] or [bold white]q[/bold white] to return[/dim]",
+                title=f"[{theme.title_style}]:radio: RADIOACTIVE ZEN MODE  •  {style_name}[/{theme.title_style}]",
+                subtitle="[dim]Press [bold white]Space[/bold white] to change visualizer  •  [bold white]Enter[/bold white] or [bold white]q[/bold white] to return[/dim]",
                 border_style=theme.border,
                 padding=(1, 2),
                 width=78,
@@ -398,7 +582,7 @@ def handle_zen_mode(volume: int = None) -> None:
         is_tty = sys.stdin.isatty() and sys.stdout.isatty()
         if not is_tty:
             # Fallback for non-interactive / tests
-            console.print(generate_frame(0.0))
+            console.print(generate_frame(0.0, active_style))
             return
 
         old_settings = None
@@ -416,7 +600,7 @@ def handle_zen_mode(volume: int = None) -> None:
 
         try:
             with Live(
-                generate_frame(0.0),
+                generate_frame(0.0, active_style),
                 console=console,
                 screen=True,
                 refresh_per_second=15,
@@ -424,29 +608,35 @@ def handle_zen_mode(volume: int = None) -> None:
                 start_time = time.time()
                 while True:
                     t = time.time() - start_time
-                    live.update(generate_frame(t))
+                    live.update(generate_frame(t, active_style))
 
-                    # Check for exit keypress
-                    key_pressed = False
+                    # Check for keypress
+                    key_char = None
                     if sys.platform == "win32":
                         import msvcrt
 
                         if msvcrt.kbhit():
-                            key_pressed = True
+                            ch = msvcrt.getch()
+                            try:
+                                key_char = ch.decode("utf-8", errors="ignore")
+                            except Exception:
+                                key_char = str(ch)
                     else:
                         r, _, _ = select.select([sys.stdin], [], [], 0.05)
                         if r:
-                            key_pressed = True
+                            try:
+                                key_char = sys.stdin.read(1)
+                            except Exception:
+                                key_char = None
 
-                    if key_pressed:
-                        try:
-                            if sys.platform == "win32":
-                                msvcrt.getch()
-                            else:
-                                sys.stdin.read(1)
-                        except Exception:
-                            pass
-                        break
+                    if key_char:
+                        if key_char == " ":
+                            active_style = (active_style + 1) % len(
+                                ZEN_VISUALIZER_STYLES
+                            )
+                            _current_zen_style = active_style
+                        elif key_char in ["\r", "\n", "q", "Q", "\x1b", "\x03"]:
+                            break
 
                     time.sleep(0.04)
 

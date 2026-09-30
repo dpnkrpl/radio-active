@@ -50,6 +50,40 @@ def test_handle_zen_mode_with_volume_and_metadata(capsys):
         handle_zen_mode(volume=90)
 
 
+def test_handle_zen_mode_all_styles(capsys):
+    set_global_station_info(
+        {
+            "name": "Synthwave Arcade",
+            "tags": "retrowave,synth",
+            "codec": "FLAC",
+            "bitrate": "1411",
+            "country": "France",
+            "volume": 85,
+        }
+    )
+
+    with patch("sys.stdin.isatty", return_value=False), \
+         patch("sys.stdout.isatty", return_value=False):
+        for style_idx in range(4):
+            handle_zen_mode(volume=85, style=style_idx)
+
+
+def test_handle_zen_mode_space_cycle_and_exit():
+    set_global_station_info({"name": "Chill Beats"})
+
+    # Simulate pressing ' ' twice (switching styles) then 'q' (exit)
+    read_mock_sequence = [" ", " ", "q"]
+
+    with patch("sys.stdin.isatty", return_value=True), \
+         patch("sys.stdout.isatty", return_value=True), \
+         patch("select.select", return_value=([True], [], [])), \
+         patch("sys.stdin.read", side_effect=read_mock_sequence), \
+         patch("termios.tcgetattr", return_value=[]), \
+         patch("tty.setcbreak"), \
+         patch("termios.tcsetattr"):
+        handle_zen_mode(style=0)
+
+
 def test_handle_vim_style_prompt_inactivity_timeout():
     from radioactive.utilities import handle_vim_style_prompt
 
