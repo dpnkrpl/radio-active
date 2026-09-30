@@ -3,44 +3,11 @@ import atexit
 import os
 import signal
 import sys
+import threading
 from time import sleep
 
-import psutil
-from zenlog import log
-
-from radioactive.alias import Alias
-from radioactive.app import App
-from radioactive.ffplay import Ffplay, kill_background_ffplays
-from radioactive.handler import Handler
-from radioactive.help import show_help
-from radioactive.history import History
-from radioactive.last_station import Last_station
-from radioactive.parser import parse_options
-from radioactive.paths import get_pid_path
-from radioactive.utilities import (
-    check_sort_by_parameter,
-    handle_add_station,
-    handle_add_to_favorite,
-    handle_current_play_panel,
-    handle_direct_play,
-    handle_favorite_table,
-    handle_history_table,
-    handle_listen_keypress,
-    handle_play_last_station,
-    handle_play_random_station,
-    handle_record,
-    handle_save_last_station,
-    handle_save_to_history,
-    handle_search_stations,
-    handle_station_selection_menu,
-    handle_station_uuid_play,
-    handle_update_screen,
-    handle_user_choice_from_search_result,
-    handle_welcome_screen,
-)
-
-# globally needed as signal handler needs it
-# to terminate main() properly
+# Globally needed as signal handler needs them.
+# These are assigned inside main() or final_step().
 ffplay = None
 player = None
 
@@ -49,7 +16,18 @@ def final_step(options, last_station, alias, handler, history, station_list=None
     global ffplay  # always needed
     global player
 
-    # check target URL
+    from zenlog import log
+
+    from radioactive.ffplay import Ffplay
+    from radioactive.utilities import (
+        handle_add_to_favorite,
+        handle_current_play_panel,
+        handle_listen_keypress,
+        handle_record,
+        handle_save_last_station,
+        handle_save_to_history,
+    )
+
     target_url = (options.get("target_url") or "").strip()
     if target_url == "":
         log.info("Type 's' to search for a station or '?' for help")
@@ -123,27 +101,61 @@ def final_step(options, last_station, alias, handler, history, station_list=None
 
 
 def main():
+    from zenlog import log
+
     log.level("info")
 
+    from radioactive.app import App
+    from radioactive.parser import parse_options
+
     app = App()
-
     options = parse_options()
-
     VERSION = app.get_version()
 
+    # --- Fast early exits: avoid all heavy imports ---
     if options["version"]:
         log.info("RADIO-ACTIVE : version {}".format(VERSION))
         sys.exit(0)
 
-    handler = Handler()
-    alias = Alias()
-    alias.generate_map()
-    last_station = Last_station()
-    history = History()
+    from radioactive.help import show_help
 
     if options["show_help_table"]:
         show_help()
         sys.exit(0)
+
+    # --- Deferred heavy imports (saves ~260ms when not needed) ---
+    import psutil
+
+    from radioactive.alias import Alias
+    from radioactive.ffplay import kill_background_ffplays
+    from radioactive.handler import Handler
+    from radioactive.history import History
+    from radioactive.last_station import Last_station
+    from radioactive.paths import get_pid_path
+    from radioactive.utilities import (
+        check_sort_by_parameter,
+        handle_add_station,
+        handle_add_to_favorite,
+        handle_current_play_panel,
+        handle_direct_play,
+        handle_favorite_table,
+        handle_history_table,
+        handle_play_last_station,
+        handle_play_random_station,
+        handle_record,
+        handle_search_stations,
+        handle_station_selection_menu,
+        handle_station_uuid_play,
+        handle_update_modal,
+        handle_update_screen,
+        handle_user_choice_from_search_result,
+        handle_welcome_screen,
+    )
+
+    alias = Alias()
+    alias.generate_map()
+    last_station = Last_station()
+    history = History()
 
     if options["flush_fav_list"]:
         sys.exit(alias.flush())
@@ -225,6 +237,11 @@ def main():
     atexit.register(cleanup)
 
     handle_welcome_screen()
+
+    # Run update check in background so it never blocks the interactive prompt.
+    # The modal will be shown if an update is detected.
+    _update_thread = threading.Thread(target=app.is_update_available, daemon=True)
+    _update_thread.start()
 
     # ------------------ SCHEDULED RECORDING MODE ------------------ #
     from radioactive.feature_flags import RECORDING_FEATURE
@@ -314,6 +331,7 @@ def main():
             log.info(f"Target URL: {options['target_url']}")
         else:
             # We need to use handler to validate UUID
+            handler = Handler()
             options["curr_station_name"], options["target_url"] = (
                 handle_station_uuid_play(handler, options["search_station_uuid"])
             )
@@ -400,7 +418,15 @@ def main():
 
     options["sort_by"] = check_sort_by_parameter(options["sort_by"])
 
-    handle_update_screen(app)
+    # Construct Handler as late as possible — right before we actually need the API.
+    # This avoids the ~50ms init cost for flag-only paths (--list, --kill, etc.)
+    handler = Handler()
+
+    # Update check is already running in the background thread started above;
+    # wait briefly (non-blocking) so it can print before we proceed to prompts
+    _update_thread.join(timeout=0.4)
+    if app.update_available:
+        handle_update_modal(app)
 
     # ----------- country ----------- #
     if options["discover_country_code"]:
@@ -560,6 +586,8 @@ def main():
 
 
 def signal_handler(sig, frame):
+    from zenlog import log
+
     log.debug("You pressed Ctrl+C!")
     log.debug("Stopping the radio")
     if ffplay and ffplay.is_playing:

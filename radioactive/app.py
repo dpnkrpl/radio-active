@@ -12,15 +12,18 @@ if sys.version_info >= (3, 8):
 else:
     import importlib_metadata as metadata
 
+# from zenlog import log
+
 
 class App:
     def __init__(self):
         try:
             self.__VERSION__ = metadata.version("radio-active")
         except metadata.PackageNotFoundError:
-            self.__VERSION__ = "4.0.3"  # change this on every update #
+            self.__VERSION__ = "4.1.0"  # change this on every update #
         self.pypi_api = "https://pypi.org/pypi/radio-active/json"
         self.remote_version = ""
+        self.update_available = False
 
     def get_version(self):
         """get the version number as string"""
@@ -47,11 +50,14 @@ class App:
             tup_remote = tuple(map(int, self.remote_version.split(".")))
 
             if tup_remote > tup_local:
+                self.update_available = True
                 return True
+            self.update_available = False
             return False
 
         except Exception:
-            print("Could not fetch remote version number")
+            # log.debug("Could not fetch remote version number")
+            pass
 
     def get_release_notes(self, local_version, remote_version):
         """Fetch and parse release notes for all versions greater than local_version."""

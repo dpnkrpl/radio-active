@@ -188,7 +188,12 @@ def handle_record(
     outfile_path = os.path.join(record_file_path, tmp_filename)
 
     process = record_audio_from_url(
-        target_url, outfile_path, force_mp3, loglevel, duration
+        target_url,
+        outfile_path,
+        force_mp3,
+        loglevel,
+        duration,
+        station_name=curr_station_name,
     )
     return process, outfile_path
 
@@ -205,10 +210,9 @@ def handle_add_station(alias) -> None:
 
     if left.strip() == "" or right.strip() == "":
         log.error("Empty inputs not allowed")
-        sys.exit(1)
+        return
     alias.add_entry(left, right)
     log.info("New entry: {}={} added\n".format(left, right))
-    sys.exit(0)
 
 
 def handle_add_to_favorite(alias, station_name: str, station_uuid_url: str) -> None:
@@ -337,37 +341,14 @@ def handle_direct_play(
         return station_name, station_name_or_url
     else:
         log.debug("Direct play: station name provided")
-        # station name from fav list
-        # search for the station in fav list and return name and url
-
+        # search in favorites first
         response = alias.search(station_name_or_url)
+
+        # if not found, check history
         if not response and history:
             log.debug("Not found in favorites, checking history")
-            # history object should have a search method or we iterate
-            # looking at history.py might be good
             if hasattr(history, "search"):
                 response = history.search(station_name_or_url)
-            else:
-                # fallback iteration
-                for entry in history.get_list():
-                    name = entry.get("name", "").strip()
-                    val = entry.get("uuid_or_url", "").strip()
-                    # also check stationuuid if it exists (older history)
-                    sid = entry.get("stationuuid", "").strip()
-
-                    token = station_name_or_url.strip().lower()
-                    log.debug(
-                        f"Comparing history entry: '{name.lower()}' with token: '{token}'"
-                    )
-
-                    if (
-                        name.lower() == token
-                        or val == station_name_or_url.strip()
-                        or sid == station_name_or_url.strip()
-                    ):
-                        log.debug(f"History match found: {name}")
-                        response = entry
-                        break
 
         if not response:
             log.debug(f"Search failed for: {station_name_or_url}")
@@ -376,7 +357,7 @@ def handle_direct_play(
             )
             return None, None
         else:
-            log.debug(f"Direct play: {response}")
+            log.debug(f"Direct play found: {response}")
             return response["name"], response.get("uuid_or_url") or response.get(
                 "stationuuid"
             )
@@ -539,3 +520,205 @@ def handle_shazam(target_url: str):
                 os.remove(temp_file)
             except:
                 pass
+
+
+def handle_shazam_file(audio_path: str) -> None:
+    """
+    Identify an audio file using Shazam.
+    """
+    if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+        log.error(f"Recording file '{audio_path}' not found or is empty.")
+        return
+
+    log.info(f"Identifying song from '{os.path.basename(audio_path)}' using Shazam ...")
+    try:
+        result = asyncio.run(_identify_music(audio_path))
+
+        if result and result.get("track"):
+            track = result.get("track")
+            title = track.get("title")
+            artist = track.get("subtitle")
+            log.info(f"🎶 Match found: {title} -- {artist}")
+
+            # Send notification if possible
+            handle_notification("Song Identified", f"{title} - {artist}")
+
+            # Show the popup with all details
+            from radioactive.ui import handle_shazam_popup
+
+            handle_shazam_popup(result)
+        else:
+            log.warning("No match found for this recording.")
+    except Exception as e:
+        log.error(f"Error during identification: {e}")
+
+
+def handle_play_recording(audio_path: str) -> None:
+    """
+    Play a recorded audio file using ffplay, mpv, or vlc.
+    """
+    if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+        log.error(f"Recording file '{audio_path}' not found or is empty.")
+        return
+
+    from shutil import which
+
+    filename = os.path.basename(audio_path)
+    log.info(f"▶️ Playing recording: {filename}")
+    log.info("Playback started. Press 'q' or Ctrl+C to stop / return.")
+
+    cmd = None
+    if which("ffplay"):
+        cmd = ["ffplay", "-nodisp", "-autoexit", "-loglevel", "warning", audio_path]
+    elif which("mpv"):
+        cmd = ["mpv", "--no-video", audio_path]
+    elif which("cvlc"):
+        cmd = ["cvlc", "--play-and-exit", audio_path]
+    elif which("vlc"):
+        cmd = ["vlc", "-I", "dummy", "--play-and-exit", audio_path]
+    else:
+        log.error("No audio player found (ffplay, mpv, or vlc required).")
+        return
+
+    try:
+        subprocess.run(cmd)
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        log.error(f"Error playing recording: {e}")
+
+
+def handle_recording_library() -> Tuple[Optional[str], Optional[str]]:
+    """
+    Interactive recording library manager.
+    Allows user to select a recording, play, rename, delete, or Shazam it.
+    Returns (recording_name, recording_filepath) if user chose to play, otherwise (None, None).
+    """
+    from pick import pick
+
+    from radioactive.paths import get_recordings_path
+
+    recordings_path = get_recordings_path()
+    if not os.path.exists(recordings_path):
+        log.info(f"Recordings directory does not exist: {recordings_path}")
+        return None, None
+
+    while True:
+        try:
+            entries = [
+                f
+                for f in os.listdir(recordings_path)
+                if os.path.isfile(os.path.join(recordings_path, f))
+                and not f.startswith(".")
+            ]
+        except Exception as e:
+            log.error(f"Could not read recordings directory: {e}")
+            return None, None
+
+        if not entries:
+            log.info("No recordings found in your library.")
+            return None, None
+
+        # Sort by modification time (newest first)
+        entries.sort(
+            key=lambda f: os.path.getmtime(os.path.join(recordings_path, f)),
+            reverse=True,
+        )
+
+        title = "📼 Recording Library - Select a recording:\n(Use Up/Down arrows and Enter to select)"
+        options = ["🔙 [ Cancel / Back ]"] + [f"🎵 {f}" for f in entries]
+
+        try:
+            _, index = pick(options, title, indicator="-->")
+        except Exception as e:
+            log.debug(f"Menu error or cancelled: {e}")
+            return None, None
+
+        if index == 0:
+            # First entry is Cancel / Back
+            return None, None
+
+        selected_filename = entries[index - 1]
+        selected_filepath = os.path.join(recordings_path, selected_filename)
+
+        action_title = f"📼 Selected: {selected_filename}\nChoose an action:"
+        action_options = [
+            "▶️  Play recording",
+            "🔍 Shazam (Identify song)",
+            "✏️  Rename",
+            "🗑️  Delete",
+            "🔙 Back to recordings list",
+        ]
+
+        try:
+            _, action_idx = pick(action_options, action_title, indicator="-->")
+        except Exception as e:
+            log.debug(f"Action menu error or cancelled: {e}")
+            continue
+
+        if action_idx == 0:
+            # Play recording via main player
+            return selected_filename, selected_filepath
+
+        elif action_idx == 1:
+            # Shazam identify
+            handle_shazam_file(selected_filepath)
+
+        elif action_idx == 2:
+            # Rename
+            try:
+                print(f"\nCurrent filename: {selected_filename}")
+                new_name = input("Enter new filename (leave blank to cancel): ").strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                continue
+
+            if not new_name:
+                log.info("Rename cancelled.")
+                continue
+
+            # Strip any directory traversal characters
+            new_name = os.path.basename(new_name)
+
+            # Preserve extension if not specified in new name
+            _, orig_ext = os.path.splitext(selected_filename)
+            if "." not in new_name and orig_ext:
+                new_name = f"{new_name}{orig_ext}"
+
+            new_filepath = os.path.join(recordings_path, new_name)
+            if os.path.exists(new_filepath) and new_filepath != selected_filepath:
+                log.error(f"A file named '{new_name}' already exists.")
+                continue
+
+            try:
+                os.rename(selected_filepath, new_filepath)
+                log.info(f"Renamed '{selected_filename}' -> '{new_name}' successfully!")
+            except Exception as e:
+                log.error(f"Failed to rename file: {e}")
+
+        elif action_idx == 3:
+            # Delete
+            try:
+                confirm = (
+                    input(
+                        f"Are you sure you want to delete '{selected_filename}'? (y/N): "
+                    )
+                    .strip()
+                    .lower()
+                )
+            except (EOFError, KeyboardInterrupt):
+                print()
+                continue
+
+            if confirm in ["y", "yes"]:
+                try:
+                    os.remove(selected_filepath)
+                    log.info(f"Deleted '{selected_filename}' successfully.")
+                except Exception as e:
+                    log.error(f"Failed to delete recording: {e}")
+            else:
+                log.info("Deletion cancelled.")
+
+        elif action_idx == 4:
+            # Back
+            continue

@@ -1,13 +1,13 @@
 from os import path
 
-from rich.console import Console
-from rich.table import Table
-
 user = path.expanduser("~")
 
 
 def show_help():
     """Show help message as table"""
+    from rich.console import Console
+    from rich.table import Table
+
     console = Console()
 
     table = Table(show_header=True, header_style="bold magenta")

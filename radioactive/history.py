@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Dict, Optional
 
 from zenlog import log
 
@@ -19,7 +20,7 @@ class History:
                     self.history_list = json.load(f)
             else:
                 self.history_list = []
-        except Exception as e:
+        except (json.JSONDecodeError, Exception) as e:
             log.debug(f"Error loading history: {e}")
             self.history_list = []
 
@@ -28,22 +29,19 @@ class History:
         Add a station to history.
         station: dict with name, uuid, url keys mostly
         """
-        # remove existing entry with same name or uuid to avoid duplicates
-        # and bring it to top
+        curr_name = station.get("name", "").strip().lower()
+        curr_uuid = (
+            station.get("stationuuid") or station.get("uuid_or_url") or ""
+        ).strip()
+
+        # Deduplicate and bring to top
         new_list = []
         for s in self.history_list:
             prev_name = s.get("name", "").strip().lower()
-            curr_name = station.get("name", "").strip().lower()
-
             prev_uuid = (s.get("stationuuid") or s.get("uuid_or_url") or "").strip()
-            curr_uuid = (
-                station.get("stationuuid") or station.get("uuid_or_url") or ""
-            ).strip()
 
-            # check name
             if prev_name == curr_name:
                 continue
-            # check uuid if available
             if prev_uuid and curr_uuid and prev_uuid == curr_uuid:
                 continue
 
@@ -59,11 +57,31 @@ class History:
         self.save()
 
     def save(self):
+        """Atomic save of history file to prevent corruption."""
         try:
-            with open(self.history_path, "w") as f:
+            temp_path = f"{self.history_path}.tmp"
+            with open(temp_path, "w") as f:
                 json.dump(self.history_list, f, indent=4)
+            os.replace(temp_path, self.history_path)
         except Exception as e:
             log.warning(f"Could not save history: {e}")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def get_list(self):
         return self.history_list
+
+    def search(self, token: str) -> Optional[Dict]:
+        """Search for a station in history by name, url, or uuid."""
+        if not token:
+            return None
+        token = token.strip().lower()
+
+        for entry in self.history_list:
+            name = entry.get("name", "").strip().lower()
+            url = entry.get("uuid_or_url", "").strip().lower()
+            uuid = (entry.get("stationuuid") or "").strip().lower()
+
+            if name == token or url == token or uuid == token:
+                return entry
+        return None

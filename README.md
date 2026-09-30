@@ -224,6 +224,7 @@ Radioactive features a modern, **Vim-style command bar** at the bottom of the sc
 | `i` | `info` | Show station details |
 | `r` | `record` | Start/Stop recording |
 | `rf` | `recordfile` | Record with a specific filename |
+| `rl` | `recordings` | Recording library (select, rename, delete, Shazam) |
 | `f` | `fav` | Add current station to favorites |
 | `l` | `list` | Open favorite station selection menu |
 | `s` | `search` | Search for a new station online |

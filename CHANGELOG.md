@@ -1,3 +1,22 @@
+## 4.1.0
+
+1. Significant improvements on app loading speed :zap:
+2. Recording quality improved 🎶
+3. Added recording library command `rl` which allows you to play, delete, rename and shazam your recordings
+4. Faster station lookup
+5. Fix playback issues with ffplay
+6. Optimize interaction with external player, improving play/pause time
+7. Improved fuzzy find logic 🔍
+8. Stability improvements for windows
+9. Critical bug fixes 🐛
+10. Minor UI fixes
+
+## 4.0.3
+
+1. Fix broken installation on python >=3.13
+2. NOTE: shazam does not work anymore on python version >= 3.13
+
+
 ## 4.0.2
 
 1. More information on the shazam identified track

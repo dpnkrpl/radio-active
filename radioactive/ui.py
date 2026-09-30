@@ -35,6 +35,7 @@ def handle_welcome_screen() -> None:
 def handle_update_screen(app) -> None:
     """
     Check for updates and print a message if available.
+    Used for non-modal background notification.
 
     Args:
         app: The App instance to check for updates.
@@ -44,9 +45,8 @@ def handle_update_screen(app) -> None:
         remote_version = app.get_remote_version()
 
         update_msg = (
-            f"\t[blink]An update available, run [green][italic]pip install radio-active=="
-            + remote_version
-            + f"[/italic][/green][/blink]\n"
+            f"\t[blink]An update available, run [green][italic]pipx upgrade radio-active"
+            f"[/italic][/green][/blink]\n"
         )
 
         # Add release notes for all missing versions if available
@@ -64,6 +64,60 @@ def handle_update_screen(app) -> None:
         print(update_panel)
     else:
         log.debug("Update not available")
+
+
+def handle_update_modal(app) -> None:
+    """
+    Show a modal popup for update notification with release notes.
+
+    Args:
+        app: The App instance.
+    """
+    try:
+        from rich.align import Align
+        from rich.console import Console
+        from rich.panel import Panel
+
+        local_version = app.get_version()
+        remote_version = app.get_remote_version()
+
+        update_msg = (
+            f"[bold green]A new version of radio-active is available![/bold green]\n\n"
+            f"Current version: [yellow]v{local_version}[/yellow]\n"
+            f"Latest version:  [bold green]v{remote_version}[/bold green]\n\n"
+            f"To update, run:\n[italic]pipx upgrade radio-active[/italic]\n"
+        )
+
+        # Add release notes if available
+        release_notes = app.get_release_notes(local_version, remote_version)
+        if release_notes:
+            update_msg += f"\n[bold yellow]What's new since v{local_version}:[/bold yellow]\n{release_notes}"
+        else:
+            update_msg += f"\nSee all changes: https://github.com/dpnkrpl/radio-active/blob/main/CHANGELOG.md"
+
+        console = Console()
+        with console.screen():
+            info_panel = Panel(
+                update_msg,
+                title="[bold white]🚀 Update Available[/bold white]",
+                subtitle="Press Enter to continue",
+                border_style="green",
+                padding=(1, 4),
+                width=100,
+                expand=False,
+            )
+
+            # Center the panel visually
+            console.print("\n" * 4)
+            console.print(Align.center(info_panel))
+
+            try:
+                console.input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+
+    except Exception as e:
+        log.debug(f"Error in update modal: {e}")
 
 
 def handle_favorite_table(alias) -> None:

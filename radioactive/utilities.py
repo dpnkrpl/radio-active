@@ -44,10 +44,12 @@ from radioactive.actions import (
     handle_play_last_station,
     handle_play_random_station,
     handle_record,
+    handle_recording_library,
     handle_save_last_station,
     handle_save_to_history,
     handle_search_stations,
     handle_shazam,
+    handle_shazam_file,
     handle_station_name_from_headers,
     handle_station_uuid_play,
 )
@@ -61,6 +63,7 @@ from radioactive.ui import (
     handle_history_table,
     handle_recording_popup,
     handle_show_station_info,
+    handle_update_modal,
     handle_update_screen,
     handle_welcome_screen,
     handle_zen_mode,
@@ -94,11 +97,10 @@ def handle_station_selection_menu(handler, last_station, alias) -> Tuple[str, st
         station_selection_names.append(
             f"{last_station_info['name'].strip()} (last played station)"
         )
-        try:
-            station_selection_urls.append(last_station_info["stationuuid"])
-        except Exception as e:
-            log.debug(f"Error: {e}")
-            station_selection_urls.append(last_station_info["uuid_or_url"])
+        uuid = last_station_info.get("stationuuid") or last_station_info.get(
+            "uuid_or_url", ""
+        )
+        station_selection_urls.append(uuid)
 
     fav_stations = alias.alias_map
     for entry in fav_stations:
@@ -148,7 +150,7 @@ def get_key():
 
         try:
             return ch.decode("utf-8")
-        except:
+        except (UnicodeDecodeError, ValueError):
             return ""
     else:
         import termios
@@ -179,6 +181,7 @@ def handle_vim_style_prompt(alias, history) -> str:
         "i": "station info",
         "r": "record",
         "rf": "record file",
+        "rl": "recording library",
         "f": "add favorite",
         "l": "list favorites",
         "v+": "volume +",
@@ -212,7 +215,9 @@ def handle_vim_style_prompt(alias, history) -> str:
 
     buffer = ""
 
-    def get_display(text, matches=[]):
+    def get_display(text, matches=None):
+        if matches is None:
+            matches = []
         # The prompt part
         prompt_text = Text("command : ", style="green")
         prompt_text.append(text, style="bold cyan")
@@ -305,13 +310,14 @@ def handle_runtime_help_menu():
 
         add("p", "Play/Pause current station")
         if TRACK_FEATURE:
-            add("t / track", "Current track info")
+            add("t / track  ", "Current track info")
         if INFO_FEATURE:
             add("i / info", "Station information")
         add("z / zenmode", "Minimalist station display")
         if RECORDING_FEATURE:
             add("r / record", "Record a station")
             add("rf / recordfile", "Specify a filename for the recording")
+            add("rl / library", "Recording library (play, rename, delete, shazam)")
 
         add("f / fav", "Add station to favorite list")
         add("l / list", "Open favorite station selection menu")
@@ -459,9 +465,9 @@ def handle_user_choice_from_search_result(handler, response) -> Tuple[str, str]:
                 log.debug("Next station requested, picking first one")
 
             if user_input in ["r", "R", "random"]:
-                # pick a random integer withing range
-                user_input = randint(1, len(response) - 1)
-                log.debug(f"Radom station id: {user_input}")
+                # pick a random integer within range (inclusive of last result)
+                user_input = randint(1, len(response))
+                log.debug(f"Random station id: {user_input}")
             # elif user_input in ["f", "F", "fuzzy"]:
             # fuzzy find all the stations, and return the selected station id
             # user_input = fuzzy_find(response)
@@ -477,13 +483,13 @@ def handle_user_choice_from_search_result(handler, response) -> Tuple[str, str]:
                 return handle_station_uuid_play(handler, target_response["stationuuid"])
             else:
                 log.error("Please enter an ID within the range")
-                sys.exit(1)
+                return None, None
         except ValueError:
-            log.error("Please enter an valid ID number")
-            sys.exit(1)
+            log.error("Please enter a valid ID number")
+            return None, None
         except Exception as e:
             log.error(f"Error: {e}")
-            sys.exit(1)
+            return None, None
 
 
 def handle_listen_keypress(
@@ -578,6 +584,41 @@ def handle_listen_keypress(
                     handle_recording_popup(process, outfile_path)
             continue
 
+        elif RECORDING_FEATURE and user_input in [
+            "rl",
+            "RL",
+            "recordings",
+            "library",
+        ]:
+            rec_name, rec_url = handle_recording_library()
+            if rec_url:
+                if player:
+                    player.stop()
+                    player.url = rec_url
+                    player.play()
+                else:
+                    if audio_player == "vlc":
+                        from radioactive.vlc import VLC
+
+                        player = VLC(volume)
+                        player.start(rec_url)
+                    elif audio_player == "mpv":
+                        from radioactive.mpv import MPV
+
+                        player = MPV(volume)
+                        player.start(rec_url)
+                    else:
+                        from radioactive.ffplay import Ffplay
+
+                        player = Ffplay(rec_url, volume, loglevel)
+
+                handle_current_play_panel("🎙️" + rec_name + "🎙️")
+                station_name = rec_name
+                station_url = rec_url
+                target_url = rec_url
+                auto_fetcher.update_url(target_url)
+            continue
+
         if INFO_FEATURE and user_input in ["i", "I", "info"]:
             handle_show_station_info()
             continue
@@ -646,18 +687,22 @@ def handle_listen_keypress(
                 else:
                     # child
                     os.setsid()
-                    # Redirect standard file descriptors
+                    # Redirect standard file descriptors, keeping named refs for cleanup
                     sys.stdin.close()
-                    sys.stdout = open(os.devnull, "w")
-                    sys.stderr = open(os.devnull, "w")
+                    _devnull_out = open(os.devnull, "w")
+                    _devnull_err = open(os.devnull, "w")
+                    sys.stdout = _devnull_out
+                    sys.stderr = _devnull_err
                     # child should not listen to keypresses anymore
                     import signal
 
                     try:
                         signal.pause()
-                    except:
+                    except (AttributeError, OSError):
                         while True:
                             time.sleep(100)
+                    _devnull_out.close()
+                    _devnull_err.close()
                     sys.exit(0)
             except AttributeError:
                 log.error("Background mode is only supported on Unix-like systems")
@@ -894,9 +939,10 @@ def handle_listen_keypress(
                                 if len(target_list) == 1:
                                     log.info("Station is already playing!")
                                     break
-                            player.stop()
-                            player.url = new_target_url
-                            player.play()
+                            if player:
+                                player.stop()
+                                player.url = new_target_url
+                                player.play()
                             handle_current_play_panel(new_station_name)
                             # Save the new station as last played and add to history
                             handle_save_last_station(
@@ -908,6 +954,7 @@ def handle_listen_keypress(
                             station_url = new_target_url
                             station_name = new_station_name
                             target_url = new_target_url
+                            auto_fetcher.update_url(target_url)
                             break
                         else:
                             raise Exception("Could not resolve station URL")
@@ -926,30 +973,35 @@ def handle_listen_keypress(
                 )
 
         elif user_input == "v+":
-            new_vol = min(player.volume + 10, 100)
-            player.set_volume(new_vol)
+            if player:
+                new_vol = min(player.volume + 10, 100)
+                player.set_volume(new_vol)
+            else:
+                log.info("Nothing is playing")
 
         elif user_input == "v-":
-            new_vol = max(player.volume - 10, 0)
-            player.set_volume(new_vol)
+            if player:
+                new_vol = max(player.volume - 10, 0)
+                player.set_volume(new_vol)
+            else:
+                log.info("Nothing is playing")
 
         elif user_input.startswith("v "):
-            try:
-                vol_str = user_input.split(" ")[1].strip()
-                new_vol = int(vol_str)
-                if 0 <= new_vol <= 100:
-                    player.set_volume(new_vol)
-                else:
-                    log.error("Volume must be between 0 and 100")
-            except Exception:
-                log.error("Invalid volume format. Use 'v 50'")
+            if player:
+                try:
+                    vol_str = user_input.split(" ")[1].strip()
+                    new_vol = int(vol_str)
+                    if 0 <= new_vol <= 100:
+                        player.set_volume(new_vol)
+                    else:
+                        log.error("Volume must be between 0 and 100")
+                except Exception:
+                    log.error("Invalid volume format. Use 'v 50'")
+            else:
+                log.info("Nothing is playing")
 
-        elif user_input == "?":
+        elif user_input in ["?", "help"]:
             handle_runtime_help_menu()
-
-        elif user_input in ["q", "Q", "quit"]:
-            player.stop()
-            sys.exit(0)
 
         elif user_input.strip() != "":
             # Fuzzy match station from aliases or history if not a direct command
@@ -971,6 +1023,7 @@ def handle_listen_keypress(
                     station_url = url
                     station_name = name
                     target_url = url
+                    auto_fetcher.update_url(target_url)
             except SystemExit:
                 # Direct play sys.exit(1) on failure, we want to stay in loop
                 pass
