@@ -1174,7 +1174,7 @@ def handle_settings() -> None:
             except Exception:
                 pass
             log.info(f"Desktop notifications: {'Enabled' if new_notif else 'Disabled'}")
+        # elif index == 5:
+        #     handle_view_release_notes()
         elif index == 5:
-            handle_view_release_notes()
-        elif index == 6:
             handle_search_limit_configuration()
