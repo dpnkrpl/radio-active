@@ -129,7 +129,10 @@ def print_table(
 
             table.add_row(*row_data)
 
-        console.print(table)
+        from radioactive.actions import get_search_result_view
+
+        if get_search_result_view() != "dropdown":
+            console.print(table)
         return response
     else:
         log.info("No stations found")

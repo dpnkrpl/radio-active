@@ -27,6 +27,7 @@ from radioactive.last_station import Last_station
 
 _desktop_notification_enabled: bool = True
 _search_limit: int = 100
+_search_result_view: str = "table"
 
 
 def get_desktop_notification_enabled() -> bool:
@@ -54,6 +55,22 @@ def set_search_limit(val: Any) -> int:
     except (ValueError, TypeError):
         _search_limit = 100
     return _search_limit
+
+
+def get_search_result_view() -> str:
+    """Get preferred search result view ('table' or 'dropdown')."""
+    return _search_result_view
+
+
+def set_search_result_view(val: str) -> str:
+    """Set preferred search result view ('table' or 'dropdown')."""
+    global _search_result_view
+    clean_val = str(val).strip().lower()
+    if clean_val in ["dropdown", "picker", "drop_down", "menu"]:
+        _search_result_view = "dropdown"
+    else:
+        _search_result_view = "table"
+    return _search_result_view
 
 
 def handle_notification(title: str, message: str, icon: str = None) -> None:
@@ -1122,6 +1139,51 @@ def handle_search_limit_configuration() -> None:
     log.info(f"Search results count per table set to: {chosen}")
 
 
+def handle_search_result_view_configuration() -> None:
+    """
+    Interactive Preferred Search Result View Selector.
+    Allows user to choose between:
+    a. Table View (Numbered list & prompt)
+    b. Dropdown Picker (Interactive station selector with live background playback)
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+
+    current_view = get_search_result_view()
+    title = (
+        f"📋 Preferred Search Result View (Current: {'Table' if current_view == 'table' else 'Dropdown Picker'}):\n"
+        "(Use Up/Down arrows and Enter to select)"
+    )
+    options = [
+        "🔙 [ Back / Keep Current ]",
+        f"📊 1. Table View (Numbered list & prompt){'  [active]' if current_view == 'table' else ''}",
+        f"📋 2. Dropdown Picker (Interactive live preview){'  [active]' if current_view == 'dropdown' else ''}",
+    ]
+
+    try:
+        _, idx = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Search view selection cancelled: {e}")
+        return
+
+    if idx == 0:
+        return
+    elif idx == 1:
+        chosen = "table"
+    elif idx == 2:
+        chosen = "dropdown"
+
+    set_search_result_view(chosen)
+    try:
+        save_config_option("search_result_view", chosen)
+    except Exception:
+        pass
+    log.info(
+        f"Preferred search result view set to: {'Table View' if chosen == 'table' else 'Dropdown Picker'}"
+    )
+
+
 def handle_settings() -> None:
     """
     Interactive Settings Hub.
@@ -1130,8 +1192,8 @@ def handle_settings() -> None:
     2. Default visualizer
     3. Configure zenmode (show volume, show track info, show visualizer, default timer)
     4. Desktop notification (notify-send) [ON/OFF]
-    5. Future version release notes
-    6. Search results count per table
+    5. Search results count per table
+    6. Preferred search result view (Table view / Dropdown picker)
     """
     from pick import pick
 
@@ -1140,6 +1202,9 @@ def handle_settings() -> None:
     while True:
         notif_state = "ON" if get_desktop_notification_enabled() else "OFF"
         search_limit = get_search_limit()
+        view_state = (
+            "Table View" if get_search_result_view() == "table" else "Dropdown Picker"
+        )
 
         title = "⚙️  Radioactive Settings - Select a category to configure:\n(Use Up/Down arrows and Enter to select)"
         options = [
@@ -1148,8 +1213,8 @@ def handle_settings() -> None:
             "📊 2. Default Visualizer",
             "🧘 3. Configure Zen Mode",
             f"🔔 4. Desktop Notifications: [{notif_state}]",
-            # "🚀 5. Check Future Version Release Notes",
             f"🔍 5. Search Results Count Per Table: [{search_limit}]",
+            f"📋 6. Preferred Search Result View: [{view_state}]",
         ]
 
         try:
@@ -1174,7 +1239,7 @@ def handle_settings() -> None:
             except Exception:
                 pass
             log.info(f"Desktop notifications: {'Enabled' if new_notif else 'Disabled'}")
-        # elif index == 5:
-        #     handle_view_release_notes()
         elif index == 5:
             handle_search_limit_configuration()
+        elif index == 6:
+            handle_search_result_view_configuration()

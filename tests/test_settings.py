@@ -14,9 +14,12 @@ from radioactive.actions import (
     set_desktop_notification_enabled,
     get_search_limit,
     set_search_limit,
+    get_search_result_view,
+    set_search_result_view,
     handle_notification,
     handle_view_release_notes,
     handle_search_limit_configuration,
+    handle_search_result_view_configuration,
 )
 from radioactive.ui import (
     get_default_zen_style,
@@ -33,7 +36,11 @@ from radioactive.ui import (
     handle_zen_mode,
     set_global_station_info,
 )
-from radioactive.utilities import handle_vim_style_prompt
+from radioactive.utilities import (
+    handle_vim_style_prompt,
+    handle_user_choice_dropdown,
+    handle_user_choice_from_search_result,
+)
 
 
 def test_save_and_load_config_settings(tmp_path):
@@ -48,6 +55,7 @@ def test_save_and_load_config_settings(tmp_path):
         save_config_option("zen_timer", "30")
         save_config_option("notification", "false")
         save_config_option("limit", "250")
+        save_config_option("search_result_view", "dropdown")
 
         configs = Configs()
         opts = configs.load()
@@ -59,6 +67,7 @@ def test_save_and_load_config_settings(tmp_path):
         assert opts.get("zen_timer") == "30"
         assert opts.get("notification") == "false"
         assert opts.get("limit") == "250"
+        assert opts.get("search_result_view") == "dropdown"
 
 
 def test_visualizer_getters_and_setters():
@@ -107,7 +116,7 @@ def test_zenmode_getters_and_setters():
     assert get_zen_timer() == 15.0
 
 
-def test_notification_and_search_limit_getters_and_setters():
+def test_notification_search_limit_and_view_getters_and_setters():
     set_desktop_notification_enabled(False)
     assert get_desktop_notification_enabled() is False
     set_desktop_notification_enabled(True)
@@ -119,6 +128,13 @@ def test_notification_and_search_limit_getters_and_setters():
     assert get_search_limit() == 200
     set_search_limit("invalid")
     assert get_search_limit() == 100
+
+    set_search_result_view("dropdown")
+    assert get_search_result_view() == "dropdown"
+    set_search_result_view("table")
+    assert get_search_result_view() == "table"
+    set_search_result_view("invalid")
+    assert get_search_result_view() == "table"
 
 
 def test_handle_notification_disabled():
@@ -241,6 +257,84 @@ def test_handle_search_limit_configuration():
     set_search_limit(100)
 
 
+def test_handle_search_result_view_configuration():
+    # Test select dropdown
+    with patch("pick.pick", return_value=("📋 2. Dropdown Picker", 2)), \
+         patch("radioactive.config.save_config_option"):
+        handle_search_result_view_configuration()
+        assert get_search_result_view() == "dropdown"
+
+    # Test select table
+    with patch("pick.pick", return_value=("📊 1. Table View", 1)), \
+         patch("radioactive.config.save_config_option"):
+        handle_search_result_view_configuration()
+        assert get_search_result_view() == "table"
+
+    # Test cancel
+    with patch("pick.pick", return_value=("🔙 [ Back / Keep Current ]", 0)):
+        handle_search_result_view_configuration()
+        assert get_search_result_view() == "table"
+
+    # Reset
+    set_search_result_view("table")
+
+
+def test_handle_user_choice_dropdown():
+    stations = [
+        {"name": "Station A", "url": "http://stream.a.com", "country": "US", "codec": "MP3", "bitrate": 128},
+        {"name": "Station B", "url": "http://stream.b.com", "country": "UK", "codec": "AAC", "bitrate": 320},
+    ]
+    mock_handler = MagicMock()
+    mock_player = MagicMock()
+    mock_player.url = None
+
+    # Pick Station A (index 1), then Station B (index 2), then Done (index 0)
+    pick_responses = [
+        ("📻 Station A", 1),
+        ("📻 Station B", 2),
+        ("🔙 [ Done / Back to Main App ]", 0),
+    ]
+
+    with patch("radioactive.utilities.pick", side_effect=pick_responses):
+        name, url = handle_user_choice_dropdown(
+            mock_handler,
+            stations,
+            player=mock_player,
+        )
+
+        assert name == "Station B"
+        assert url == "http://stream.b.com"
+        assert mock_player.stop.call_count == 2
+        assert mock_player.play.call_count == 2
+        assert mock_player.url == "http://stream.b.com"
+
+
+def test_handle_user_choice_from_search_result_delegation():
+    stations = [
+        {"name": "Station A", "url": "http://stream.a.com", "stationuuid": "1234"},
+    ]
+    mock_handler = MagicMock()
+
+    # When dropdown is configured
+    set_search_result_view("dropdown")
+    with patch("radioactive.utilities.handle_user_choice_dropdown", return_value=("Station A", "http://stream.a.com")) as mock_dd:
+        name, url = handle_user_choice_from_search_result(mock_handler, stations)
+        assert mock_dd.called
+        assert name == "Station A"
+        assert url == "http://stream.a.com"
+
+    # When table is configured
+    set_search_result_view("table")
+    with patch("builtins.input", return_value="y"), \
+         patch("radioactive.utilities.handle_station_uuid_play", return_value=("Station A", "http://stream.a.com")):
+        name, url = handle_user_choice_from_search_result(mock_handler, stations)
+        assert name == "Station A"
+        assert url == "http://stream.a.com"
+
+    # Reset
+    set_search_result_view("table")
+
+
 def test_handle_view_release_notes():
     # Test when update is available
     with patch("radioactive.app.App.is_update_available", return_value=True), \
@@ -265,8 +359,8 @@ def test_handle_settings_hub():
         ("📊 2. Default Visualizer", 2),
         ("🧘 3. Configure Zen Mode", 3),
         ("🔔 4. Desktop Notifications", 4),
-        ("🚀 5. Check Future Version Release Notes", 5),
-        ("🔍 6. Search Results Count Per Table", 6),
+        ("🔍 5. Search Results Count Per Table", 5),
+        ("📋 6. Preferred Search Result View", 6),
         ("🔙 [ Back / Return ]", 0),
     ]
 
@@ -274,15 +368,15 @@ def test_handle_settings_hub():
          patch("radioactive.actions.handle_theme_selection") as mock_theme, \
          patch("radioactive.actions.handle_visualizer_selection") as mock_vis, \
          patch("radioactive.actions.handle_zen_mode_configuration") as mock_zen, \
-         patch("radioactive.actions.handle_view_release_notes") as mock_notes, \
          patch("radioactive.actions.handle_search_limit_configuration") as mock_limit, \
+         patch("radioactive.actions.handle_search_result_view_configuration") as mock_view, \
          patch("radioactive.config.save_config_option"):
         handle_settings()
         assert mock_theme.called
         assert mock_vis.called
         assert mock_zen.called
-        assert mock_notes.called
         assert mock_limit.called
+        assert mock_view.called
 
 
 def test_handle_zen_mode_with_disabled_elements(capsys):

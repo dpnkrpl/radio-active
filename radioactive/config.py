@@ -64,6 +64,7 @@ def write_a_sample_config_file() -> None:
         "zen_show_visualizer": "true",
         "zen_timer": "15",
         "notification": "true",
+        "search_result_view": "table",
     }
 
     try:
@@ -143,6 +144,7 @@ class Configs:
             options["zen_show_visualizer"] = get_option("zen_show_visualizer", "true")
             options["zen_timer"] = get_option("zen_timer", "15")
             options["notification"] = get_option("notification", "true")
+            options["search_result_view"] = get_option("search_result_view", "table")
 
             return options
 

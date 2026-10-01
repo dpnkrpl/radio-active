@@ -77,7 +77,11 @@ def parse_options() -> Dict[str, Any]:
 
     set_current_theme(options["theme"])
 
-    from radioactive.actions import set_desktop_notification_enabled, set_search_limit
+    from radioactive.actions import (
+        set_desktop_notification_enabled,
+        set_search_limit,
+        set_search_result_view,
+    )
     from radioactive.ui import (
         set_default_zen_style,
         set_zen_show_track,
@@ -111,5 +115,7 @@ def parse_options() -> Dict[str, Any]:
             set_desktop_notification_enabled(
                 defs["notification"].lower() in ["true", "1", "yes", "on"]
             )
+        if "search_result_view" in defs:
+            set_search_result_view(defs["search_result_view"])
 
     return options
