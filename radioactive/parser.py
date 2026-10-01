@@ -77,6 +77,7 @@ def parse_options() -> Dict[str, Any]:
 
     set_current_theme(options["theme"])
 
+    from radioactive.actions import set_desktop_notification_enabled, set_search_limit
     from radioactive.ui import (
         set_default_zen_style,
         set_zen_show_track,
@@ -84,6 +85,9 @@ def parse_options() -> Dict[str, Any]:
         set_zen_show_volume,
         set_zen_timer,
     )
+
+    if "limit" in options and options["limit"]:
+        set_search_limit(options["limit"])
 
     if hasattr(parser, "defaults") and parser.defaults:
         defs = parser.defaults
@@ -103,5 +107,9 @@ def parse_options() -> Dict[str, Any]:
             )
         if "zen_timer" in defs:
             set_zen_timer(defs["zen_timer"])
+        if "notification" in defs:
+            set_desktop_notification_enabled(
+                defs["notification"].lower() in ["true", "1", "yes", "on"]
+            )
 
     return options

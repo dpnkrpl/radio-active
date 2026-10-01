@@ -35,6 +35,7 @@ except ImportError:
 from radioactive.actions import (
     check_sort_by_parameter,
     get_current_track_name,
+    get_search_limit,
     handle_add_station,
     handle_add_to_favorite,
     handle_direct_play,
@@ -885,7 +886,11 @@ def handle_listen_keypress(
 
                 if query.strip():
                     temp_station_list = handle_search_stations(
-                        handler, query, limit=100, sort_by="votes", filter_with="none"
+                        handler,
+                        query,
+                        limit=get_search_limit(),
+                        sort_by="votes",
+                        filter_with="none",
                     )
                     if temp_station_list:
                         station_list = temp_station_list

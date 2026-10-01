@@ -1,4 +1,4 @@
-"""Tests for Settings runtime command, visualizer selection, and zen mode configuration."""
+"""Tests for Settings runtime command, visualizer selection, zen mode configuration, notifications, release notes, and search limit."""
 
 from unittest.mock import patch, MagicMock
 import os
@@ -10,6 +10,13 @@ from radioactive.actions import (
     handle_visualizer_selection,
     handle_zen_mode_configuration,
     handle_settings,
+    get_desktop_notification_enabled,
+    set_desktop_notification_enabled,
+    get_search_limit,
+    set_search_limit,
+    handle_notification,
+    handle_view_release_notes,
+    handle_search_limit_configuration,
 )
 from radioactive.ui import (
     get_default_zen_style,
@@ -39,6 +46,8 @@ def test_save_and_load_config_settings(tmp_path):
         save_config_option("zen_show_track", "false")
         save_config_option("zen_show_visualizer", "false")
         save_config_option("zen_timer", "30")
+        save_config_option("notification", "false")
+        save_config_option("limit", "250")
 
         configs = Configs()
         opts = configs.load()
@@ -48,6 +57,8 @@ def test_save_and_load_config_settings(tmp_path):
         assert opts.get("zen_show_track") == "false"
         assert opts.get("zen_show_visualizer") == "false"
         assert opts.get("zen_timer") == "30"
+        assert opts.get("notification") == "false"
+        assert opts.get("limit") == "250"
 
 
 def test_visualizer_getters_and_setters():
@@ -96,6 +107,34 @@ def test_zenmode_getters_and_setters():
     assert get_zen_timer() == 15.0
 
 
+def test_notification_and_search_limit_getters_and_setters():
+    set_desktop_notification_enabled(False)
+    assert get_desktop_notification_enabled() is False
+    set_desktop_notification_enabled(True)
+    assert get_desktop_notification_enabled() is True
+
+    set_search_limit(50)
+    assert get_search_limit() == 50
+    set_search_limit("200")
+    assert get_search_limit() == 200
+    set_search_limit("invalid")
+    assert get_search_limit() == 100
+
+
+def test_handle_notification_disabled():
+    set_desktop_notification_enabled(False)
+    with patch("shutil.which", return_value="/usr/bin/notify-send"), \
+         patch("subprocess.Popen") as mock_popen:
+        handle_notification("Title", "Message")
+        assert not mock_popen.called
+
+    set_desktop_notification_enabled(True)
+    with patch("shutil.which", return_value="/usr/bin/notify-send"), \
+         patch("subprocess.Popen") as mock_popen:
+        handle_notification("Title", "Message")
+        assert mock_popen.called
+
+
 def test_handle_visualizer_selection_cancel_and_apply():
     # Cancel
     with patch("pick.pick", return_value=("🔙 [ Cancel / Back ]", 0)):
@@ -124,11 +163,6 @@ def test_handle_zen_mode_configuration_toggles():
     set_zen_show_visualizer(True)
     set_zen_timer(15.0)
 
-    # Simulate choosing:
-    # 1 (Toggle Volume -> False)
-    # 2 (Toggle Track -> False)
-    # 3 (Toggle Visualizer -> False)
-    # 0 (Back / Return)
     pick_sequence = [
         ("🔊 Show Volume", 1),
         ("🎵 Show Track Info", 2),
@@ -151,7 +185,6 @@ def test_handle_zen_mode_configuration_toggles():
 
 
 def test_handle_zen_mode_configuration_timer_presets():
-    # Simulate choosing 4 (Default Timer) -> preset 3 (60s) -> 0 (Back)
     main_menu_sequence = [
         ("⏱️  Default Zen Timer", 4),
         ("🔙 [ Back to Settings ]", 0),
@@ -185,27 +218,71 @@ def test_handle_zen_mode_configuration_timer_presets():
     set_zen_timer(15.0)
 
 
+def test_handle_search_limit_configuration():
+    # Test preset 50
+    with patch("pick.pick", return_value=("📑 50 Results", 3)), \
+         patch("radioactive.config.save_config_option"):
+        handle_search_limit_configuration()
+        assert get_search_limit() == 50
+
+    # Test custom 75
+    with patch("pick.pick", return_value=("✏️  Custom Count...", 7)), \
+         patch("builtins.input", return_value="75"), \
+         patch("radioactive.config.save_config_option"):
+        handle_search_limit_configuration()
+        assert get_search_limit() == 75
+
+    # Test cancel
+    with patch("pick.pick", return_value=("🔙 [ Back / Keep Current ]", 0)):
+        handle_search_limit_configuration()
+        assert get_search_limit() == 75
+
+    # Reset
+    set_search_limit(100)
+
+
+def test_handle_view_release_notes():
+    # Test when update is available
+    with patch("radioactive.app.App.is_update_available", return_value=True), \
+         patch("radioactive.app.App.get_version", return_value="4.1.0"), \
+         patch("radioactive.app.App.get_remote_version", return_value="4.2.0"), \
+         patch("radioactive.app.App.get_release_notes", return_value="New features!"), \
+         patch("rich.console.Console.input"):
+        handle_view_release_notes()
+
+    # Test when no update is available
+    with patch("radioactive.app.App.is_update_available", return_value=False), \
+         patch("radioactive.app.App.get_version", return_value="4.1.0"), \
+         patch("radioactive.app.App.get_remote_version", return_value="4.1.0"), \
+         patch("radioactive.app.App.get_release_notes", return_value=None), \
+         patch("rich.console.Console.input"):
+        handle_view_release_notes()
+
+
 def test_handle_settings_hub():
-    # Sequence:
-    # 1 (Theme) -> mocked
-    # 2 (Visualizer) -> mocked
-    # 3 (Zen mode) -> mocked
-    # 0 (Back)
     pick_sequence = [
         ("🎨 1. Theme Selection", 1),
         ("📊 2. Default Visualizer", 2),
         ("🧘 3. Configure Zen Mode", 3),
+        ("🔔 4. Desktop Notifications", 4),
+        ("🚀 5. Check Future Version Release Notes", 5),
+        ("🔍 6. Search Results Count Per Table", 6),
         ("🔙 [ Back / Return ]", 0),
     ]
 
     with patch("pick.pick", side_effect=pick_sequence), \
          patch("radioactive.actions.handle_theme_selection") as mock_theme, \
          patch("radioactive.actions.handle_visualizer_selection") as mock_vis, \
-         patch("radioactive.actions.handle_zen_mode_configuration") as mock_zen:
+         patch("radioactive.actions.handle_zen_mode_configuration") as mock_zen, \
+         patch("radioactive.actions.handle_view_release_notes") as mock_notes, \
+         patch("radioactive.actions.handle_search_limit_configuration") as mock_limit, \
+         patch("radioactive.config.save_config_option"):
         handle_settings()
         assert mock_theme.called
         assert mock_vis.called
         assert mock_zen.called
+        assert mock_notes.called
+        assert mock_limit.called
 
 
 def test_handle_zen_mode_with_disabled_elements(capsys):
@@ -218,7 +295,6 @@ def test_handle_zen_mode_with_disabled_elements(capsys):
         }
     )
 
-    # Test with volume disabled, track disabled, visualizer disabled
     set_zen_show_volume(False)
     set_zen_show_track(False)
     set_zen_show_visualizer(False)

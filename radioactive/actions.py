@@ -25,9 +25,42 @@ if RECORDING_FEATURE:
 
 from radioactive.last_station import Last_station
 
+_desktop_notification_enabled: bool = True
+_search_limit: int = 100
+
+
+def get_desktop_notification_enabled() -> bool:
+    """Get desktop notification enabled state."""
+    return _desktop_notification_enabled
+
+
+def set_desktop_notification_enabled(val: bool) -> bool:
+    """Set desktop notification enabled state."""
+    global _desktop_notification_enabled
+    _desktop_notification_enabled = bool(val)
+    return _desktop_notification_enabled
+
+
+def get_search_limit() -> int:
+    """Get search results count per table."""
+    return _search_limit
+
+
+def set_search_limit(val: Any) -> int:
+    """Set search results count per table."""
+    global _search_limit
+    try:
+        _search_limit = max(1, int(val))
+    except (ValueError, TypeError):
+        _search_limit = 100
+    return _search_limit
+
 
 def handle_notification(title: str, message: str, icon: str = None) -> None:
     """Send a desktop notification on Linux."""
+    if not _desktop_notification_enabled:
+        return
+
     from shutil import which
 
     from radioactive.paths import get_logo_path
@@ -953,6 +986,142 @@ def handle_zen_mode_configuration() -> None:
             log.info(f"Zen Mode default inactivity timer set to: {chosen}s")
 
 
+def handle_view_release_notes() -> None:
+    """
+    Check for updates and display future version release notes if available.
+    """
+    from rich.align import Align
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from radioactive.app import App
+    from radioactive.theme import get_current_theme
+
+    theme = get_current_theme()
+    console = Console()
+    app = App()
+
+    has_update = False
+    local_version = app.get_version()
+    remote_version = local_version
+    release_notes = None
+
+    try:
+        with console.status(
+            "[bold cyan]Checking for updates and release notes...", spinner="dots"
+        ):
+            has_update = app.is_update_available()
+            local_version = app.get_version()
+            remote_version = app.get_remote_version()
+            release_notes = app.get_release_notes(local_version, remote_version)
+    except Exception as e:
+        log.debug(f"Error fetching release notes: {e}")
+
+    if has_update:
+        msg = (
+            f"[bold {theme.success}]🚀 A newer version of radio-active is available![/bold {theme.success}]\n\n"
+            f"Installed version: [{theme.warning}]v{local_version}[/{theme.warning}]\n"
+            f"Latest version:    [bold {theme.success}]v{remote_version}[/bold {theme.success}]\n\n"
+            f"To upgrade, run:\n  [bold cyan]pipx upgrade radio-active[/bold cyan] (or [italic]pip install -U radio-active[/italic])\n"
+        )
+        if release_notes:
+            msg += f"\n[bold {theme.warning}]What's new in future version(s):[/bold {theme.warning}]\n{release_notes}\n"
+        else:
+            msg += "\nFull changelog: https://github.com/dpnkrpl/radio-active/blob/main/CHANGELOG.md\n"
+        title = f"[{theme.title_style}]🚀 Future Release Notes (v{remote_version})[/{theme.title_style}]"
+    else:
+        msg = (
+            f"[bold {theme.success}]✨ You are on the latest version of radio-active![/bold {theme.success}]\n\n"
+            f"Current version: [bold {theme.primary}]v{local_version}[/{theme.primary}]\n\n"
+        )
+        if release_notes:
+            msg += f"[bold {theme.warning}]Release notes:[/bold {theme.warning}]\n{release_notes}\n\n"
+        else:
+            msg += "No unreleased future version notes detected.\n\n"
+        msg += "View full changelog and roadmaps at:\nhttps://github.com/dpnkrpl/radio-active/blob/main/CHANGELOG.md\n"
+        title = f"[{theme.title_style}]📦 Version & Release Information (v{local_version})[/{theme.title_style}]"
+
+    try:
+        with console.screen():
+            panel = Panel(
+                msg,
+                title=title,
+                subtitle="Press Enter to return to settings",
+                border_style=theme.border,
+                padding=(1, 4),
+                width=100,
+                expand=False,
+            )
+            console.print("\n" * 3)
+            console.print(Align.center(panel))
+            try:
+                console.input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+    except Exception as e:
+        log.error(f"Error displaying release notes: {e}")
+
+
+def handle_search_limit_configuration() -> None:
+    """
+    Interactive Search Results Count Per Table Configuration.
+    Allows user to select or enter the max results displayed per search table.
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+
+    current_limit = get_search_limit()
+
+    options = [
+        "🔙 [ Back / Keep Current ]",
+        "🔟 10 Results",
+        "📄 25 Results",
+        "📑 50 Results",
+        "📚 100 Results (Default)",
+        "📊 200 Results",
+        "🌐 500 Results",
+        "✏️  Custom Count...",
+    ]
+
+    title = f"🔍 Search Results Count Per Table (Current: {current_limit}):\n(Use Up/Down arrows and Enter to select)"
+
+    try:
+        _, idx = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Search limit selection cancelled: {e}")
+        return
+
+    if idx == 0:
+        return
+    elif idx == 1:
+        chosen = 10
+    elif idx == 2:
+        chosen = 25
+    elif idx == 3:
+        chosen = 50
+    elif idx == 4:
+        chosen = 100
+    elif idx == 5:
+        chosen = 200
+    elif idx == 6:
+        chosen = 500
+    elif idx == 7:
+        try:
+            val_str = input("Enter search results count per table (e.g. 50): ")
+            chosen = max(1, int(val_str))
+        except (ValueError, TypeError, EOFError, KeyboardInterrupt):
+            log.error("Invalid search limit entered.")
+            return
+
+    set_search_limit(chosen)
+    try:
+        save_config_option("limit", str(chosen))
+    except Exception:
+        pass
+    log.info(f"Search results count per table set to: {chosen}")
+
+
 def handle_settings() -> None:
     """
     Interactive Settings Hub.
@@ -960,16 +1129,27 @@ def handle_settings() -> None:
     1. Theme (move theme to settings)
     2. Default visualizer
     3. Configure zenmode (show volume, show track info, show visualizer, default timer)
+    4. Desktop notification (notify-send) [ON/OFF]
+    5. Future version release notes
+    6. Search results count per table
     """
     from pick import pick
 
+    from radioactive.config import save_config_option
+
     while True:
+        notif_state = "ON" if get_desktop_notification_enabled() else "OFF"
+        search_limit = get_search_limit()
+
         title = "⚙️  Radioactive Settings - Select a category to configure:\n(Use Up/Down arrows and Enter to select)"
         options = [
             "🔙 [ Back / Return ]",
             "🎨 1. Theme Selection",
             "📊 2. Default Visualizer",
             "🧘 3. Configure Zen Mode",
+            f"🔔 4. Desktop Notifications: [{notif_state}]",
+            # "🚀 5. Check Future Version Release Notes",
+            f"🔍 5. Search Results Count Per Table: [{search_limit}]",
         ]
 
         try:
@@ -986,3 +1166,15 @@ def handle_settings() -> None:
             handle_visualizer_selection()
         elif index == 3:
             handle_zen_mode_configuration()
+        elif index == 4:
+            new_notif = not get_desktop_notification_enabled()
+            set_desktop_notification_enabled(new_notif)
+            try:
+                save_config_option("notification", "true" if new_notif else "false")
+            except Exception:
+                pass
+            log.info(f"Desktop notifications: {'Enabled' if new_notif else 'Disabled'}")
+        elif index == 5:
+            handle_view_release_notes()
+        elif index == 6:
+            handle_search_limit_configuration()

@@ -63,6 +63,7 @@ def write_a_sample_config_file() -> None:
         "zen_show_track": "true",
         "zen_show_visualizer": "true",
         "zen_timer": "15",
+        "notification": "true",
     }
 
     try:
@@ -141,6 +142,7 @@ class Configs:
             options["zen_show_track"] = get_option("zen_show_track", "true")
             options["zen_show_visualizer"] = get_option("zen_show_visualizer", "true")
             options["zen_timer"] = get_option("zen_timer", "15")
+            options["notification"] = get_option("notification", "true")
 
             return options
 
