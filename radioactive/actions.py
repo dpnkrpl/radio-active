@@ -736,10 +736,11 @@ def handle_recording_library() -> Tuple[Optional[str], Optional[str]]:
 def handle_theme_selection() -> Optional[str]:
     """
     Interactive UI theme selector.
-    Allows user to switch the active theme at runtime.
+    Allows user to switch the active theme at runtime and save preference.
     """
     from pick import pick
 
+    from radioactive.config import save_config_option
     from radioactive.theme import get_current_theme, set_current_theme
 
     current = get_current_theme().name
@@ -771,5 +772,217 @@ def handle_theme_selection() -> Optional[str]:
 
     selected_code = theme_list[index - 1][0]
     set_current_theme(selected_code)
+    try:
+        save_config_option("theme", selected_code)
+    except Exception:
+        pass
     log.info(f"Theme switched to: {selected_code.capitalize()}")
     return selected_code
+
+
+def handle_visualizer_selection() -> Optional[int]:
+    """
+    Interactive Default Visualizer Selector.
+    Allows user to choose the default visualizer style for Zen Mode.
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+    from radioactive.ui import (
+        get_default_zen_style,
+        get_zen_visualizer_styles,
+        set_default_zen_style,
+    )
+
+    styles = get_zen_visualizer_styles()
+    current_idx = get_default_zen_style()
+
+    title = "📊 Default Visualizer - Select the default Zen visualizer style:\n(Use Up/Down arrows and Enter to apply)"
+    options = ["🔙 [ Cancel / Back ]"]
+    for idx, name in enumerate(styles):
+        label = f"{idx + 1}. {name}"
+        if idx == current_idx:
+            options.append(f"{label}  [active]")
+        else:
+            options.append(label)
+
+    try:
+        _, index = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Visualizer selection cancelled or error: {e}")
+        return None
+
+    if index == 0:
+        return None
+
+    selected_idx = index - 1
+    set_default_zen_style(selected_idx)
+    try:
+        save_config_option("visualizer", str(selected_idx))
+    except Exception:
+        pass
+    log.info(f"Default visualizer set to: {styles[selected_idx]}")
+    return selected_idx
+
+
+def handle_zen_mode_configuration() -> None:
+    """
+    Interactive Zen Mode Configuration Menu.
+    Allows configuring:
+    - Show volume (ON/OFF)
+    - Show track info (ON/OFF)
+    - Show visualizer (ON/OFF)
+    - Default zenmode inactivity timer (duration)
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+    from radioactive.ui import (
+        get_zen_show_track,
+        get_zen_show_visualizer,
+        get_zen_show_volume,
+        get_zen_timer,
+        set_zen_show_track,
+        set_zen_show_visualizer,
+        set_zen_show_volume,
+        set_zen_timer,
+    )
+
+    while True:
+        show_vol = get_zen_show_volume()
+        show_trk = get_zen_show_track()
+        show_vis = get_zen_show_visualizer()
+        timer_val = get_zen_timer()
+
+        timer_display = f"{int(timer_val)}s" if timer_val > 0 else "Disabled"
+
+        options = [
+            "🔙 [ Back to Settings ]",
+            f"🔊 Show Volume:        [{'ON' if show_vol else 'OFF'}]",
+            f"🎵 Show Track Info:    [{'ON' if show_trk else 'OFF'}]",
+            f"📊 Show Visualizer:    [{'ON' if show_vis else 'OFF'}]",
+            f"⏱️  Default Zen Timer:  [{timer_display}]",
+        ]
+
+        title = "🧘 Zen Mode Configuration - Select an option to configure:\n(Use Up/Down arrows and Enter to toggle/modify)"
+
+        try:
+            _, index = pick(options, title, indicator="-->")
+        except (Exception, KeyboardInterrupt) as e:
+            log.debug(f"Zen mode configuration cancelled: {e}")
+            break
+
+        if index == 0:
+            break
+        elif index == 1:
+            new_val = not show_vol
+            set_zen_show_volume(new_val)
+            try:
+                save_config_option("zen_show_volume", "true" if new_val else "false")
+            except Exception:
+                pass
+            log.info(f"Zen Mode Show Volume: {'Enabled' if new_val else 'Disabled'}")
+        elif index == 2:
+            new_val = not show_trk
+            set_zen_show_track(new_val)
+            try:
+                save_config_option("zen_show_track", "true" if new_val else "false")
+            except Exception:
+                pass
+            log.info(
+                f"Zen Mode Show Track Info: {'Enabled' if new_val else 'Disabled'}"
+            )
+        elif index == 3:
+            new_val = not show_vis
+            set_zen_show_visualizer(new_val)
+            try:
+                save_config_option(
+                    "zen_show_visualizer", "true" if new_val else "false"
+                )
+            except Exception:
+                pass
+            log.info(
+                f"Zen Mode Show Visualizer: {'Enabled' if new_val else 'Disabled'}"
+            )
+        elif index == 4:
+            timer_options = [
+                "🔙 [ Back / Keep Current ]",
+                "⏱️  15 Seconds (Default)",
+                "⏱️  30 Seconds",
+                "⏱️  60 Seconds (1 Minute)",
+                "⏱️  120 Seconds (2 Minutes)",
+                "⏱️  300 Seconds (5 Minutes)",
+                "🚫 Disable Inactivity Auto-Zen (0s)",
+                "✏️  Custom Duration...",
+            ]
+            t_title = f"⏱️  Select Default Inactivity Timer (Current: {timer_display}):"
+            try:
+                _, t_idx = pick(timer_options, t_title, indicator="-->")
+            except (Exception, KeyboardInterrupt):
+                continue
+
+            if t_idx == 0:
+                continue
+            elif t_idx == 1:
+                chosen = 15.0
+            elif t_idx == 2:
+                chosen = 30.0
+            elif t_idx == 3:
+                chosen = 60.0
+            elif t_idx == 4:
+                chosen = 120.0
+            elif t_idx == 5:
+                chosen = 300.0
+            elif t_idx == 6:
+                chosen = 0.0
+            elif t_idx == 7:
+                try:
+                    user_str = input(
+                        "Enter inactivity timer duration in seconds (0 to disable): "
+                    )
+                    chosen = max(0.0, float(user_str))
+                except (ValueError, TypeError, EOFError, KeyboardInterrupt):
+                    log.error("Invalid timer duration entered.")
+                    continue
+
+            set_zen_timer(chosen)
+            try:
+                save_config_option("zen_timer", str(chosen))
+            except Exception:
+                pass
+            log.info(f"Zen Mode default inactivity timer set to: {chosen}s")
+
+
+def handle_settings() -> None:
+    """
+    Interactive Settings Hub.
+    Provides a picker menu to configure:
+    1. Theme (move theme to settings)
+    2. Default visualizer
+    3. Configure zenmode (show volume, show track info, show visualizer, default timer)
+    """
+    from pick import pick
+
+    while True:
+        title = "⚙️  Radioactive Settings - Select a category to configure:\n(Use Up/Down arrows and Enter to select)"
+        options = [
+            "🔙 [ Back / Return ]",
+            "🎨 1. Theme Selection",
+            "📊 2. Default Visualizer",
+            "🧘 3. Configure Zen Mode",
+        ]
+
+        try:
+            _, index = pick(options, title, indicator="-->")
+        except (Exception, KeyboardInterrupt) as e:
+            log.debug(f"Settings cancelled: {e}")
+            break
+
+        if index == 0:
+            break
+        elif index == 1:
+            handle_theme_selection()
+        elif index == 2:
+            handle_visualizer_selection()
+        elif index == 3:
+            handle_zen_mode_configuration()

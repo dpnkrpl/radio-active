@@ -48,11 +48,14 @@ from radioactive.actions import (
     handle_save_last_station,
     handle_save_to_history,
     handle_search_stations,
+    handle_settings,
     handle_shazam,
     handle_shazam_file,
     handle_station_name_from_headers,
     handle_station_uuid_play,
     handle_theme_selection,
+    handle_visualizer_selection,
+    handle_zen_mode_configuration,
 )
 from radioactive.ffplay import kill_background_ffplays
 
@@ -193,39 +196,64 @@ def get_key(timeout: Optional[float] = None) -> Optional[str]:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 
-def handle_vim_style_prompt(alias, history, inactivity_timeout: float = 15.0) -> str:
+def handle_vim_style_prompt(
+    alias, history, inactivity_timeout: Optional[float] = None
+) -> str:
     """Captured VIM style command prompt with fuzzy search and completions."""
     import time
 
     from rich.live import Live
     from rich.text import Text
 
+    from radioactive.ui import get_zen_timer
+
+    effective_timeout = (
+        inactivity_timeout if inactivity_timeout is not None else get_zen_timer()
+    )
+
     # Mapping of shortcut/command to descriptive full text
     command_map = {
         "p": "play/pause",
+        "play": "play/pause",
         "t": "track info",
+        "track": "track info",
         "i": "station info",
+        "info": "station info",
         "r": "record",
+        "record": "record",
         "rf": "record file",
         "rl": "recording library",
+        "library": "recording library",
         "f": "add favorite",
-        "l": "list favorites",
+        "fav": "add favorite",
+        "list": "list favorites",
         "v+": "volume +",
         "v-": "volume -",
         "v": "set volume",
+        "volume": "set volume",
         "s": "search",
+        "search": "search",
         "n": "next station",
+        "next": "next station",
         "a": "auto track info",
+        "auto": "auto track info",
         "sz": "shazam identify",
         "shazam": "shazam identify",
-        "th": "theme selector",
+        ".": "settings",
+        "settings": "settings",
+        "setting": "settings",
+        "set": "settings",
         "theme": "theme selector",
         "themes": "theme selector",
         "timer": "timer",
         "sleep": "sleep",
         "b": "background",
+        "background": "background",
         "q": "quit",
+        "quit": "quit",
         "help": "help",
+        "z": "zen mode",
+        "zen": "zen mode",
         "?": "help",
     }
 
@@ -280,11 +308,12 @@ def handle_vim_style_prompt(alias, history, inactivity_timeout: float = 15.0) ->
             char = get_key(timeout=0.5)
 
             if char is None:
-                # Idle slice - check if 15s inactivity timeout reached
+                # Idle slice - check if inactivity timeout reached
                 if (
                     not buffer
-                    and inactivity_timeout
-                    and (time.time() - start_idle_time >= inactivity_timeout)
+                    and effective_timeout
+                    and effective_timeout > 0
+                    and (time.time() - start_idle_time >= effective_timeout)
                 ):
                     return "z"
                 continue
@@ -377,7 +406,7 @@ def handle_runtime_help_menu():
         if TRACK_FEATURE:
             add("a / auto", "Fetch track info every 10s")
         add("sz / shazam", "Identify current song using Shazam")
-        add("th / theme", "Select UI color theme")
+        add(". / settings", "Configure settings (Theme, Visualizer, Zen mode)")
         if TIMER_FEATURE:
             add("timer / sleep", "Set a sleep timer")
 
@@ -676,6 +705,20 @@ def handle_listen_keypress(
         elif user_input in ["z", "Z", "zenmode"]:
             current_vol = player.volume if player else volume
             handle_zen_mode(volume=current_vol)
+            continue
+
+        elif user_input.strip() in [
+            ".",
+            "settings",
+            "setting",
+            "set",
+            "SETTINGS",
+            "SETTING",
+            "SET",
+        ]:
+            handle_settings()
+            if station_name and station_name != "N/A":
+                handle_current_play_panel(station_name)
             continue
 
         elif user_input in ["th", "TH", "theme", "THEME", "themes"]:

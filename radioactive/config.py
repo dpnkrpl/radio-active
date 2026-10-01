@@ -12,6 +12,33 @@ from typing import Any, Dict, Optional
 from zenlog import log
 
 
+def save_config_option(key: str, value: str) -> None:
+    """
+    Save or update a single configuration option in the config file.
+    """
+    from radioactive.paths import get_config_path
+
+    file_path = get_config_path()
+    config = configparser.ConfigParser()
+
+    try:
+        if os.path.exists(file_path):
+            config.read(file_path)
+
+        if not config.has_section("AppConfig"):
+            config.add_section("AppConfig")
+
+        config.set("AppConfig", key, str(value))
+
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "w") as config_file:
+            config.write(config_file)
+
+        log.debug(f"Saved config option '{key} = {value}' to {file_path}")
+    except Exception as e:
+        log.error(f"Error saving config option '{key}': {e}")
+
+
 def write_a_sample_config_file() -> None:
     """
     Create a sample configuration file with default settings.
@@ -31,6 +58,11 @@ def write_a_sample_config_file() -> None:
         "filetype": "mp3",
         "player": "ffplay",
         "theme": "default",
+        "visualizer": "0",
+        "zen_show_volume": "true",
+        "zen_show_track": "true",
+        "zen_show_visualizer": "true",
+        "zen_timer": "15",
     }
 
     try:
@@ -104,6 +136,11 @@ class Configs:
             options["filetype"] = get_option("filetype", "mp3")
             options["player"] = get_option("player", "ffplay")
             options["theme"] = get_option("theme", "default")
+            options["visualizer"] = get_option("visualizer", "0")
+            options["zen_show_volume"] = get_option("zen_show_volume", "true")
+            options["zen_show_track"] = get_option("zen_show_track", "true")
+            options["zen_show_visualizer"] = get_option("zen_show_visualizer", "true")
+            options["zen_timer"] = get_option("zen_timer", "15")
 
             return options
 

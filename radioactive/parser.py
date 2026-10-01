@@ -77,4 +77,31 @@ def parse_options() -> Dict[str, Any]:
 
     set_current_theme(options["theme"])
 
+    from radioactive.ui import (
+        set_default_zen_style,
+        set_zen_show_track,
+        set_zen_show_visualizer,
+        set_zen_show_volume,
+        set_zen_timer,
+    )
+
+    if hasattr(parser, "defaults") and parser.defaults:
+        defs = parser.defaults
+        if "visualizer" in defs:
+            set_default_zen_style(defs["visualizer"])
+        if "zen_show_volume" in defs:
+            set_zen_show_volume(
+                defs["zen_show_volume"].lower() in ["true", "1", "yes", "on"]
+            )
+        if "zen_show_track" in defs:
+            set_zen_show_track(
+                defs["zen_show_track"].lower() in ["true", "1", "yes", "on"]
+            )
+        if "zen_show_visualizer" in defs:
+            set_zen_show_visualizer(
+                defs["zen_show_visualizer"].lower() in ["true", "1", "yes", "on"]
+            )
+        if "zen_timer" in defs:
+            set_zen_timer(defs["zen_timer"])
+
     return options

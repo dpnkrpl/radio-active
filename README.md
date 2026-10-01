@@ -229,8 +229,9 @@ Radioactive features a modern, **Vim-style command bar** at the bottom of the sc
 | `l` | `list` | Open favorite station selection menu |
 | `s` | `search` | Search for a new station online |
 | `n` | `next` | Play next station (from search/favs) |
-| `timer` | `sleep` | Set a sleep timer |
 | `v` | `volume` | Set volume (e.g., `v 50`) |
+| `timer` | `sleep` | Set a sleep timer |
+| `.` | `settings` | Settings menu (Theme, Visualizer, Zen mode) |
 | `sz` | `shazam` | Identify current song using Shazam |
 | `b` | `background` | Run radioactive in the background |
 | `q` | `quit` | Exit Radioactive |

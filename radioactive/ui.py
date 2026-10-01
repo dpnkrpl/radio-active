@@ -238,12 +238,94 @@ def handle_show_station_info() -> None:
 
 
 _current_zen_style = 0
+_zen_show_volume = True
+_zen_show_track = True
+_zen_show_visualizer = True
+_zen_timer = 15.0
+
 ZEN_VISUALIZER_STYLES = [
     "Spectrum Bars",
     "Waveform Oscilloscope",
     "Retro Tape Deck",
     "Dot Matrix Peaks",
 ]
+
+
+def get_zen_visualizer_styles() -> List[str]:
+    """Get list of available Zen visualizer styles."""
+    return ZEN_VISUALIZER_STYLES
+
+
+def get_default_zen_style() -> int:
+    """Get current default Zen visualizer style index."""
+    return _current_zen_style
+
+
+def set_default_zen_style(style: Any) -> int:
+    """Set default Zen visualizer style by index or name."""
+    global _current_zen_style
+    if isinstance(style, int):
+        _current_zen_style = style % len(ZEN_VISUALIZER_STYLES)
+    elif isinstance(style, str):
+        if style.strip().isdigit():
+            _current_zen_style = int(style.strip()) % len(ZEN_VISUALIZER_STYLES)
+        else:
+            for idx, name in enumerate(ZEN_VISUALIZER_STYLES):
+                if name.strip().lower() == style.strip().lower():
+                    _current_zen_style = idx
+                    break
+    return _current_zen_style
+
+
+def get_zen_show_volume() -> bool:
+    """Get Zen mode show volume preference."""
+    return _zen_show_volume
+
+
+def set_zen_show_volume(val: bool) -> bool:
+    """Set Zen mode show volume preference."""
+    global _zen_show_volume
+    _zen_show_volume = bool(val)
+    return _zen_show_volume
+
+
+def get_zen_show_track() -> bool:
+    """Get Zen mode show track info preference."""
+    return _zen_show_track
+
+
+def set_zen_show_track(val: bool) -> bool:
+    """Set Zen mode show track info preference."""
+    global _zen_show_track
+    _zen_show_track = bool(val)
+    return _zen_show_track
+
+
+def get_zen_show_visualizer() -> bool:
+    """Get Zen mode show visualizer preference."""
+    return _zen_show_visualizer
+
+
+def set_zen_show_visualizer(val: bool) -> bool:
+    """Set Zen mode show visualizer preference."""
+    global _zen_show_visualizer
+    _zen_show_visualizer = bool(val)
+    return _zen_show_visualizer
+
+
+def get_zen_timer() -> float:
+    """Get default Zen mode inactivity timer in seconds."""
+    return _zen_timer
+
+
+def set_zen_timer(val: Any) -> float:
+    """Set default Zen mode inactivity timer in seconds."""
+    global _zen_timer
+    try:
+        _zen_timer = max(0.0, float(val))
+    except (ValueError, TypeError):
+        _zen_timer = 15.0
+    return _zen_timer
 
 
 def handle_zen_mode(
@@ -380,264 +462,285 @@ def handle_zen_mode(
                 content.append(f"{badges_text}\n", style="italic cyan")
 
             # Active Track Marquee / Scrolling Ticker
-            current_track = track
-            if not current_track:
-                current_track = (
-                    global_current_station_info.get("track")
-                    or global_current_station_info.get("song")
-                    or global_current_station_info.get("stream_title")
-                    or global_current_station_info.get("icy_title")
-                )
+            if _zen_show_track:
+                current_track = track
                 if not current_track:
-                    cand_title = global_current_station_info.get("title")
-                    if (
-                        cand_title
-                        and str(cand_title).strip() != ""
-                        and str(cand_title).strip().lower()
-                        != str(display_name).strip().lower()
-                    ):
-                        current_track = str(cand_title).strip()
+                    current_track = (
+                        global_current_station_info.get("track")
+                        or global_current_station_info.get("song")
+                        or global_current_station_info.get("stream_title")
+                        or global_current_station_info.get("icy_title")
+                    )
+                    if not current_track:
+                        cand_title = global_current_station_info.get("title")
+                        if (
+                            cand_title
+                            and str(cand_title).strip() != ""
+                            and str(cand_title).strip().lower()
+                            != str(display_name).strip().lower()
+                        ):
+                            current_track = str(cand_title).strip()
 
-            if current_track and str(current_track).strip() != "":
-                clean_track = str(current_track).strip()
-                ticker_width = 46
-                padded = f"{clean_track}   ★   "
-                offset = int(t * 3.2) % len(padded)
-                extended = padded * 4
-                ticker_text = extended[offset : offset + ticker_width]
+                if current_track and str(current_track).strip() != "":
+                    clean_track = str(current_track).strip()
+                    ticker_width = 46
+                    padded = f"{clean_track}   ★   "
+                    offset = int(t * 3.2) % len(padded)
+                    extended = padded * 4
+                    ticker_text = extended[offset : offset + ticker_width]
 
-                marquee_line = Text()
-                marquee_line.append("\n🎵 Now Playing: ", style=f"bold {theme.accent}")
-                marquee_line.append("[ ", style=theme.dim)
-                marquee_line.append(ticker_text, style=f"bold {theme.text}")
-                marquee_line.append(" ]", style=theme.dim)
-                content.append_text(marquee_line)
+                    marquee_line = Text()
+                    marquee_line.append(
+                        "\n🎵 Now Playing: ", style=f"bold {theme.accent}"
+                    )
+                    marquee_line.append("[ ", style=theme.dim)
+                    marquee_line.append(ticker_text, style=f"bold {theme.text}")
+                    marquee_line.append(" ]", style=theme.dim)
+                    content.append_text(marquee_line)
 
             # Volume slider line
-            vol_line = Text()
-            vol_line.append(f"\n{vol_icon} Volume: [", style=f"bold {theme.text}")
-            for i in range(filled_vol_bars):
-                color_idx = min(
-                    int((i / total_vol_bars) * len(colors)), len(colors) - 1
-                )
-                vol_line.append("▰", style=f"bold {colors[color_idx]}")
-            vol_line.append("▱" * unfilled_vol_bars, style=theme.dim)
-            vol_line.append(f"] {clamped_vol}%\n\n", style=f"bold {theme.primary}")
-            content.append_text(vol_line)
-
-            # --- STYLE 0: SPECTRUM BARS ---
-            if cur_style == 0:
-                for i in range(num_bars):
-                    freq = 0.25 + (i / num_bars) * 1.2
-                    target = (
-                        math.sin(t * 3.5 * freq + i * 0.4) * 2.2
-                        + math.cos(t * 1.8 - i * 0.3) * 1.6
-                        + random.uniform(0.2, 1.8)
+            if _zen_show_volume:
+                vol_line = Text()
+                vol_line.append(f"\n{vol_icon} Volume: [", style=f"bold {theme.text}")
+                for i in range(filled_vol_bars):
+                    color_idx = min(
+                        int((i / total_vol_bars) * len(colors)), len(colors) - 1
                     )
-                    target = max(0.2, min(float(max_height), target))
-                    levels_current[i] += (target - levels_current[i]) * 0.45
-                    val = levels_current[i]
+                    vol_line.append("▰", style=f"bold {colors[color_idx]}")
+                vol_line.append("▱" * unfilled_vol_bars, style=theme.dim)
+                vol_line.append(f"] {clamped_vol}%\n\n", style=f"bold {theme.primary}")
+                content.append_text(vol_line)
+            else:
+                content.append("\n")
 
-                    if val > peaks[i]:
-                        peaks[i] = val
-                    else:
-                        peaks[i] = max(0.0, peaks[i] - 0.22)
+            if _zen_show_visualizer:
+                # --- STYLE 0: SPECTRUM BARS ---
+                if cur_style == 0:
+                    for i in range(num_bars):
+                        freq = 0.25 + (i / num_bars) * 1.2
+                        target = (
+                            math.sin(t * 3.5 * freq + i * 0.4) * 2.2
+                            + math.cos(t * 1.8 - i * 0.3) * 1.6
+                            + random.uniform(0.2, 1.8)
+                        )
+                        target = max(0.2, min(float(max_height), target))
+                        levels_current[i] += (target - levels_current[i]) * 0.45
+                        val = levels_current[i]
 
-                for r in range(max_height, 0, -1):
-                    row_text = Text()
-                    color = colors[r - 1]
-                    for i, val in enumerate(levels_current):
-                        if val >= r:
-                            row_text.append("█ ", style=color)
-                        elif val >= r - 0.5:
-                            row_text.append("▄ ", style=color)
-                        elif int(peaks[i]) == r:
-                            row_text.append("━ ", style=theme.text)
+                        if val > peaks[i]:
+                            peaks[i] = val
                         else:
-                            row_text.append("  ")
-                    content.append_text(row_text)
-                    content.append("\n")
+                            peaks[i] = max(0.0, peaks[i] - 0.22)
 
-                vu_left = min(8, max(0, int(levels_current[2] / max_height * 8)))
-                vu_right = min(8, max(0, int(levels_current[5] / max_height * 8)))
-                vu_bar_l = "▰" * vu_left + "▱" * (8 - vu_left)
-                vu_bar_r = "▰" * vu_right + "▱" * (8 - vu_right)
-                content.append(
-                    f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
-                    style=theme.visualizer_meter_style,
-                )
+                    for r in range(max_height, 0, -1):
+                        row_text = Text()
+                        color = colors[r - 1]
+                        for i, val in enumerate(levels_current):
+                            if val >= r:
+                                row_text.append("█ ", style=color)
+                            elif val >= r - 0.5:
+                                row_text.append("▄ ", style=color)
+                            elif int(peaks[i]) == r:
+                                row_text.append("━ ", style=theme.text)
+                            else:
+                                row_text.append("  ")
+                        content.append_text(row_text)
+                        content.append("\n")
 
-            # --- STYLE 1: WAVEFORM OSCILLOSCOPE ---
-            elif cur_style == 1:
-                wave_width = 56
-                wave_points = []
-                for x in range(wave_width):
-                    y = (
-                        math.sin(t * 4.5 + x * 0.22) * 1.8
-                        + math.cos(t * 2.2 - x * 0.12) * 0.7
-                        + math.sin(t * 7.0 + x * 0.45) * 0.4
+                    vu_left = min(8, max(0, int(levels_current[2] / max_height * 8)))
+                    vu_right = min(8, max(0, int(levels_current[5] / max_height * 8)))
+                    vu_bar_l = "▰" * vu_left + "▱" * (8 - vu_left)
+                    vu_bar_r = "▰" * vu_right + "▱" * (8 - vu_right)
+                    content.append(
+                        f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
+                        style=theme.visualizer_meter_style,
                     )
-                    wave_points.append(2.5 - y)
 
-                for r in range(5, -1, -1):
-                    row_text = Text()
-                    color = colors[min(r, len(colors) - 1)]
+                # --- STYLE 1: WAVEFORM OSCILLOSCOPE ---
+                elif cur_style == 1:
+                    wave_width = 56
+                    wave_points = []
                     for x in range(wave_width):
-                        y_val = wave_points[x]
-                        if abs(y_val - r) < 0.45:
-                            row_text.append("∿", style=f"bold {color}")
-                        elif abs(y_val - r) < 0.9:
-                            row_text.append("≈", style=color)
-                        elif r == 2:
-                            row_text.append("┈", style=f"dim {theme.border}")
-                        else:
-                            row_text.append(" ")
-                    content.append_text(row_text)
-                    content.append("\n")
+                        y = (
+                            math.sin(t * 4.5 + x * 0.22) * 1.8
+                            + math.cos(t * 2.2 - x * 0.12) * 0.7
+                            + math.sin(t * 7.0 + x * 0.45) * 0.4
+                        )
+                        wave_points.append(2.5 - y)
 
-                vu_val_l = min(
-                    8,
-                    max(0, int((math.sin(t * 3.0) + 1) * 3.5 + random.uniform(0, 1))),
-                )
-                vu_val_r = min(
-                    8,
-                    max(0, int((math.cos(t * 2.8) + 1) * 3.5 + random.uniform(0, 1))),
-                )
-                vu_l = "▰" * vu_val_l + "▱" * (8 - vu_val_l)
-                vu_r = "▰" * vu_val_r + "▱" * (8 - vu_val_r)
-                content.append(
-                    f"\nL: [{vu_l}]   [dim]OSC: 44.1 kHz[/dim]   R: [{vu_r}]\n",
-                    style=theme.visualizer_meter_style,
-                )
+                    for r in range(5, -1, -1):
+                        row_text = Text()
+                        color = colors[min(r, len(colors) - 1)]
+                        for x in range(wave_width):
+                            y_val = wave_points[x]
+                            if abs(y_val - r) < 0.45:
+                                row_text.append("∿", style=f"bold {color}")
+                            elif abs(y_val - r) < 0.9:
+                                row_text.append("≈", style=color)
+                            elif r == 2:
+                                row_text.append("┈", style=f"dim {theme.border}")
+                            else:
+                                row_text.append(" ")
+                        content.append_text(row_text)
+                        content.append("\n")
 
-            # --- STYLE 2: RETRO REEL-TO-REEL TAPE DECK ---
-            elif cur_style == 2:
-                reel_frames = ["◴", "◷", "◶", "◵"]
-                reel_idx_l = int(t * 8) % len(reel_frames)
-                reel_idx_r = (reel_idx_l + 2) % len(reel_frames)
-                reel_l = reel_frames[reel_idx_l]
-                reel_r = reel_frames[reel_idx_r]
-
-                mins = int(t) // 60
-                secs = int(t) % 60
-                tape_counter = f"{mins:02d}:{secs:02d}"
-
-                tape_motion = int(t * 10) % 4
-                tape_chars = ["══", "──", "━━", "──"]
-                tape_pat = tape_chars[tape_motion] * 17
-
-                tape_border_color = theme.border
-                accent_color = theme.accent
-                primary_color = theme.primary
-
-                inner_w = 54
-                row1 = Text("┌" + "─" * inner_w + "┐", style=tape_border_color)
-                row2 = Text()
-                row2.append("│    ( ", style=tape_border_color)
-                row2.append(f"{reel_l}", style=f"bold {primary_color}")
-                row2.append(" ) ", style=tape_border_color)
-                row2.append(f"{tape_pat}", style=f"bold {accent_color}")
-                row2.append(" ( ", style=tape_border_color)
-                row2.append(f"{reel_r}", style=f"bold {primary_color}")
-                row2.append(" )    │", style=tape_border_color)
-
-                r3_str = " [ REEL A ]       ▶ PLAYING • STEREO       [ REEL B ] "
-                row3 = Text()
-                row3.append("│", style=tape_border_color)
-                row3.append(r3_str.center(inner_w), style=f"dim {theme.text}")
-                row3.append("│", style=tape_border_color)
-
-                r4_str = f"[ TAPE COUNTER: {tape_counter} ]"
-                row4 = Text()
-                row4.append("│", style=tape_border_color)
-                row4.append(r4_str.center(inner_w), style=f"bold {accent_color}")
-                row4.append("│", style=tape_border_color)
-
-                r5_str = "● ● ●  HIGH FIDELITY DOLBY NR  ● ● ●"
-                row5 = Text()
-                row5.append("│", style=tape_border_color)
-                row5.append(r5_str.center(inner_w), style=f"dim {theme.dim}")
-                row5.append("│", style=tape_border_color)
-
-                row6 = Text("└" + "─" * inner_w + "┘", style=tape_border_color)
-
-                content.append_text(row1)
-                content.append("\n")
-                content.append_text(row2)
-                content.append("\n")
-                content.append_text(row3)
-                content.append("\n")
-                content.append_text(row4)
-                content.append("\n")
-                content.append_text(row5)
-                content.append("\n")
-                content.append_text(row6)
-                content.append("\n")
-
-                vu_val_l = min(
-                    8,
-                    max(0, int((math.sin(t * 3.5) + 1) * 3.5 + random.uniform(0, 1))),
-                )
-                vu_val_r = min(
-                    8,
-                    max(0, int((math.cos(t * 3.2) + 1) * 3.5 + random.uniform(0, 1))),
-                )
-                vu_l = "▰" * vu_val_l + "▱" * (8 - vu_val_l)
-                vu_r = "▰" * vu_val_r + "▱" * (8 - vu_val_r)
-                content.append(
-                    f"\nL: [{vu_l}]   R: [{vu_r}]\n",
-                    style=theme.visualizer_meter_style,
-                )
-
-            # --- STYLE 3: DOT MATRIX PEAKS ---
-            elif cur_style == 3:
-                for i in range(num_bars):
-                    freq = 0.25 + (i / num_bars) * 1.2
-                    target = (
-                        math.sin(t * 3.8 * freq + i * 0.4) * 2.2
-                        + math.cos(t * 2.0 - i * 0.3) * 1.6
-                        + random.uniform(0.2, 1.8)
+                    vu_val_l = min(
+                        8,
+                        max(
+                            0, int((math.sin(t * 3.0) + 1) * 3.5 + random.uniform(0, 1))
+                        ),
                     )
-                    target = max(0.2, min(float(max_height), target))
-                    levels_current[i] += (target - levels_current[i]) * 0.45
-                    val = levels_current[i]
+                    vu_val_r = min(
+                        8,
+                        max(
+                            0, int((math.cos(t * 2.8) + 1) * 3.5 + random.uniform(0, 1))
+                        ),
+                    )
+                    vu_l = "▰" * vu_val_l + "▱" * (8 - vu_val_l)
+                    vu_r = "▰" * vu_val_r + "▱" * (8 - vu_val_r)
+                    content.append(
+                        f"\nL: [{vu_l}]   [dim]OSC: 44.1 kHz[/dim]   R: [{vu_r}]\n",
+                        style=theme.visualizer_meter_style,
+                    )
 
-                    if val > peaks[i]:
-                        peaks[i] = val
-                    else:
-                        peaks[i] = max(0.0, peaks[i] - 0.22)
+                # --- STYLE 2: RETRO REEL-TO-REEL TAPE DECK ---
+                elif cur_style == 2:
+                    reel_frames = ["◴", "◷", "◶", "◵"]
+                    reel_idx_l = int(t * 8) % len(reel_frames)
+                    reel_idx_r = (reel_idx_l + 2) % len(reel_frames)
+                    reel_l = reel_frames[reel_idx_l]
+                    reel_r = reel_frames[reel_idx_r]
 
-                dot_glyphs = ["·", ":", "⁚", "⁝", "⁞", "●"]
-                for r in range(max_height, 0, -1):
-                    row_text = Text()
-                    color = colors[r - 1]
-                    glyph = dot_glyphs[r - 1]
-                    for i, val in enumerate(levels_current):
-                        if val >= r:
-                            row_text.append(f"{glyph} ", style=f"bold {color}")
-                        elif val >= r - 0.5:
-                            row_text.append("· ", style=color)
-                        elif int(peaks[i]) == r:
-                            row_text.append("· ", style=f"bold {theme.accent}")
-                        else:
-                            row_text.append("· ", style=f"dim {theme.dim}")
-                    content.append_text(row_text)
+                    mins = int(t) // 60
+                    secs = int(t) % 60
+                    tape_counter = f"{mins:02d}:{secs:02d}"
+
+                    tape_motion = int(t * 10) % 4
+                    tape_chars = ["══", "──", "━━", "──"]
+                    tape_pat = tape_chars[tape_motion] * 17
+
+                    tape_border_color = theme.border
+                    accent_color = theme.accent
+                    primary_color = theme.primary
+
+                    inner_w = 54
+                    row1 = Text("┌" + "─" * inner_w + "┐", style=tape_border_color)
+                    row2 = Text()
+                    row2.append("│    ( ", style=tape_border_color)
+                    row2.append(f"{reel_l}", style=f"bold {primary_color}")
+                    row2.append(" ) ", style=tape_border_color)
+                    row2.append(f"{tape_pat}", style=f"bold {accent_color}")
+                    row2.append(" ( ", style=tape_border_color)
+                    row2.append(f"{reel_r}", style=f"bold {primary_color}")
+                    row2.append(" )    │", style=tape_border_color)
+
+                    r3_str = " [ REEL A ]       ▶ PLAYING • STEREO       [ REEL B ] "
+                    row3 = Text()
+                    row3.append("│", style=tape_border_color)
+                    row3.append(r3_str.center(inner_w), style=f"dim {theme.text}")
+                    row3.append("│", style=tape_border_color)
+
+                    r4_str = f"[ TAPE COUNTER: {tape_counter} ]"
+                    row4 = Text()
+                    row4.append("│", style=tape_border_color)
+                    row4.append(r4_str.center(inner_w), style=f"bold {accent_color}")
+                    row4.append("│", style=tape_border_color)
+
+                    r5_str = "● ● ●  HIGH FIDELITY DOLBY NR  ● ● ●"
+                    row5 = Text()
+                    row5.append("│", style=tape_border_color)
+                    row5.append(r5_str.center(inner_w), style=f"dim {theme.dim}")
+                    row5.append("│", style=tape_border_color)
+
+                    row6 = Text("└" + "─" * inner_w + "┘", style=tape_border_color)
+
+                    content.append_text(row1)
+                    content.append("\n")
+                    content.append_text(row2)
+                    content.append("\n")
+                    content.append_text(row3)
+                    content.append("\n")
+                    content.append_text(row4)
+                    content.append("\n")
+                    content.append_text(row5)
+                    content.append("\n")
+                    content.append_text(row6)
                     content.append("\n")
 
-                vu_left = min(8, max(0, int(levels_current[3] / max_height * 8)))
-                vu_right = min(8, max(0, int(levels_current[6] / max_height * 8)))
-                vu_bar_l = "●" * vu_left + "·" * (8 - vu_left)
-                vu_bar_r = "●" * vu_right + "·" * (8 - vu_right)
-                content.append(
-                    f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
-                    style=theme.visualizer_meter_style,
-                )
+                    vu_val_l = min(
+                        8,
+                        max(
+                            0, int((math.sin(t * 3.5) + 1) * 3.5 + random.uniform(0, 1))
+                        ),
+                    )
+                    vu_val_r = min(
+                        8,
+                        max(
+                            0, int((math.cos(t * 3.2) + 1) * 3.5 + random.uniform(0, 1))
+                        ),
+                    )
+                    vu_l = "▰" * vu_val_l + "▱" * (8 - vu_val_l)
+                    vu_r = "▰" * vu_val_r + "▱" * (8 - vu_val_r)
+                    content.append(
+                        f"\nL: [{vu_l}]   R: [{vu_r}]\n",
+                        style=theme.visualizer_meter_style,
+                    )
 
-            style_name = ZEN_VISUALIZER_STYLES[cur_style].upper()
+                # --- STYLE 3: DOT MATRIX PEAKS ---
+                elif cur_style == 3:
+                    for i in range(num_bars):
+                        freq = 0.25 + (i / num_bars) * 1.2
+                        target = (
+                            math.sin(t * 3.8 * freq + i * 0.4) * 2.2
+                            + math.cos(t * 2.0 - i * 0.3) * 1.6
+                            + random.uniform(0.2, 1.8)
+                        )
+                        target = max(0.2, min(float(max_height), target))
+                        levels_current[i] += (target - levels_current[i]) * 0.45
+                        val = levels_current[i]
+
+                        if val > peaks[i]:
+                            peaks[i] = val
+                        else:
+                            peaks[i] = max(0.0, peaks[i] - 0.22)
+
+                    dot_glyphs = ["·", ":", "⁚", "⁝", "⁞", "●"]
+                    for r in range(max_height, 0, -1):
+                        row_text = Text()
+                        color = colors[r - 1]
+                        glyph = dot_glyphs[r - 1]
+                        for i, val in enumerate(levels_current):
+                            if val >= r:
+                                row_text.append(f"{glyph} ", style=f"bold {color}")
+                            elif val >= r - 0.5:
+                                row_text.append("· ", style=color)
+                            elif int(peaks[i]) == r:
+                                row_text.append("· ", style=f"bold {theme.accent}")
+                            else:
+                                row_text.append("· ", style=f"dim {theme.dim}")
+                        content.append_text(row_text)
+                        content.append("\n")
+
+                    vu_left = min(8, max(0, int(levels_current[3] / max_height * 8)))
+                    vu_right = min(8, max(0, int(levels_current[6] / max_height * 8)))
+                    vu_bar_l = "●" * vu_left + "·" * (8 - vu_left)
+                    vu_bar_r = "●" * vu_right + "·" * (8 - vu_right)
+                    content.append(
+                        f"\nL: [{vu_bar_l}]   R: [{vu_bar_r}]\n",
+                        style=theme.visualizer_meter_style,
+                    )
+
+                style_name = ZEN_VISUALIZER_STYLES[cur_style].upper()
+                panel_title = f"[{theme.title_style}]:radio: RADIOACTIVE ZEN MODE  •  {style_name}[/{theme.title_style}]"
+                panel_subtitle = "[dim]Press [bold white]Space[/bold white] to change visualizer  •  [bold white]Enter[/bold white] or [bold white]q[/bold white] to return[/dim]"
+            else:
+                panel_title = f"[{theme.title_style}]:radio: RADIOACTIVE ZEN MODE[/{theme.title_style}]"
+                panel_subtitle = "[dim]Press [bold white]Enter[/bold white] or [bold white]q[/bold white] to return[/dim]"
+
             panel = Panel(
                 Align.center(content),
-                title=f"[{theme.title_style}]:radio: RADIOACTIVE ZEN MODE  •  {style_name}[/{theme.title_style}]",
-                subtitle="[dim]Press [bold white]Space[/bold white] to change visualizer  •  [bold white]Enter[/bold white] or [bold white]q[/bold white] to return[/dim]",
+                title=panel_title,
+                subtitle=panel_subtitle,
                 border_style=theme.border,
                 padding=(1, 2),
                 width=78,
