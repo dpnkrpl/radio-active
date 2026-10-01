@@ -35,6 +35,7 @@ except ImportError:
 from radioactive.actions import (
     check_sort_by_parameter,
     get_current_track_name,
+    get_search_limit,
     handle_add_station,
     handle_add_to_favorite,
     handle_direct_play,
@@ -48,10 +49,14 @@ from radioactive.actions import (
     handle_save_last_station,
     handle_save_to_history,
     handle_search_stations,
+    handle_settings,
     handle_shazam,
     handle_shazam_file,
     handle_station_name_from_headers,
     handle_station_uuid_play,
+    handle_theme_selection,
+    handle_visualizer_selection,
+    handle_zen_mode_configuration,
 )
 from radioactive.ffplay import kill_background_ffplays
 
@@ -131,10 +136,25 @@ def handle_station_selection_menu(handler, last_station, alias) -> Tuple[str, st
         return handle_station_uuid_play(handler, station_uuid)
 
 
-def get_key():
-    """Helper to capture single key on Linux and Windows."""
+def get_key(timeout: Optional[float] = None) -> Optional[str]:
+    """Helper to capture single key on Linux and Windows with optional timeout in seconds."""
+    if not sys.stdin.isatty():
+        try:
+            line = sys.stdin.readline()
+            return line.strip() if line else None
+        except Exception:
+            return None
+
     if sys.platform == "win32":
         import msvcrt
+        import time
+
+        if timeout is not None:
+            start_t = time.time()
+            while not msvcrt.kbhit():
+                if time.time() - start_t >= timeout:
+                    return None
+                time.sleep(0.05)
 
         ch = msvcrt.getch()
         if ch in [b"\x00", b"\xe0"]:  # Special keys
@@ -153,50 +173,88 @@ def get_key():
         except (UnicodeDecodeError, ValueError):
             return ""
     else:
+        import select
         import termios
         import tty
 
         fd = sys.stdin.fileno()
         old_settings = termios.tcgetattr(fd)
         try:
-            tty.setraw(sys.stdin.fileno())
+            tty.setraw(fd)
+            if timeout is not None:
+                r, _, _ = select.select([fd], [], [], timeout)
+                if not r:
+                    return None
+
             ch = sys.stdin.read(1)
             if ch == "\x1b":  # Escape sequence
-                seq = sys.stdin.read(2)
-                ch += seq
+                r, _, _ = select.select([fd], [], [], 0.05)
+                if r:
+                    seq = sys.stdin.read(2)
+                    ch += seq
+            return ch
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-        return ch
 
 
-def handle_vim_style_prompt(alias, history) -> str:
+def handle_vim_style_prompt(
+    alias, history, inactivity_timeout: Optional[float] = None
+) -> str:
     """Captured VIM style command prompt with fuzzy search and completions."""
+    import time
+
     from rich.live import Live
     from rich.text import Text
+
+    from radioactive.ui import get_zen_timer
+
+    effective_timeout = (
+        inactivity_timeout if inactivity_timeout is not None else get_zen_timer()
+    )
 
     # Mapping of shortcut/command to descriptive full text
     command_map = {
         "p": "play/pause",
+        "play": "play/pause",
         "t": "track info",
+        "track": "track info",
         "i": "station info",
+        "info": "station info",
         "r": "record",
+        "record": "record",
         "rf": "record file",
         "rl": "recording library",
+        "library": "recording library",
         "f": "add favorite",
-        "l": "list favorites",
+        "fav": "add favorite",
+        "list": "list favorites",
         "v+": "volume +",
         "v-": "volume -",
         "v": "set volume",
+        "volume": "set volume",
         "s": "search",
+        "search": "search",
         "n": "next station",
+        "next": "next station",
         "a": "auto track info",
+        "auto": "auto track info",
         "sz": "shazam identify",
         "shazam": "shazam identify",
+        ".": "settings",
+        "settings": "settings",
+        "setting": "settings",
+        "set": "settings",
+        "theme": "theme selector",
+        "themes": "theme selector",
         "timer": "timer",
         "sleep": "sleep",
         "b": "background",
+        "background": "background",
         "q": "quit",
+        "quit": "quit",
         "help": "help",
+        "z": "zen mode",
+        "zen": "zen mode",
         "?": "help",
     }
 
@@ -214,6 +272,7 @@ def handle_vim_style_prompt(alias, history) -> str:
     station_names = sorted(list(set([n for n in station_names if n])))
 
     buffer = ""
+    start_idle_time = time.time()
 
     def get_display(text, matches=None):
         if matches is None:
@@ -247,7 +306,21 @@ def handle_vim_style_prompt(alias, history) -> str:
 
     with Live(get_display(""), transient=True, refresh_per_second=10) as live:
         while True:
-            char = get_key()
+            char = get_key(timeout=0.5)
+
+            if char is None:
+                # Idle slice - check if inactivity timeout reached
+                if (
+                    not buffer
+                    and effective_timeout
+                    and effective_timeout > 0
+                    and (time.time() - start_idle_time >= effective_timeout)
+                ):
+                    return "z"
+                continue
+
+            # Key was pressed, reset idle timer
+            start_idle_time = time.time()
 
             # Find current matches for logic below
             cmd_matches = [m for m in completions if buffer and m.startswith(buffer)]
@@ -298,11 +371,14 @@ def handle_runtime_help_menu():
     from rich.panel import Panel
     from rich.table import Table
 
+    from radioactive.theme import get_current_theme
+
+    theme = get_current_theme()
     console = Console()
     with console.screen():
         table = Table(box=None, expand=False, border_style="dim")
-        table.add_column("Command", style="bold cyan", justify="left")
-        table.add_column("Description", style="green", justify="left")
+        table.add_column("Command", style=f"bold {theme.secondary}", justify="left")
+        table.add_column("Description", style=theme.success, justify="left")
 
         # Helper to simplify adding rows
         def add(cmd, desc):
@@ -331,6 +407,7 @@ def handle_runtime_help_menu():
         if TRACK_FEATURE:
             add("a / auto", "Fetch track info every 10s")
         add("sz / shazam", "Identify current song using Shazam")
+        add(". / settings", "Configure settings (Theme, Visualizer, Zen mode)")
         if TIMER_FEATURE:
             add("timer / sleep", "Set a sleep timer")
 
@@ -341,9 +418,9 @@ def handle_runtime_help_menu():
         # Center the table within a panel
         help_panel = Panel(
             table,
-            title="[bold white]:radio: Available Runtime Commands[/bold white]",
+            title=f"[{theme.title_style}]:radio: Available Runtime Commands[/{theme.title_style}]",
             subtitle="Press Enter to return",
-            border_style="white",
+            border_style=theme.border,
             expand=False,
             padding=(1, 4),
         )
@@ -399,6 +476,9 @@ class AutoFetcher:
                 current_song = get_current_track_name(self.target_url)
                 if current_song and current_song != self.last_song:
                     station_info = get_global_station_info()
+                    station_info["track"] = current_song
+                    station_info["title"] = current_song
+                    set_global_station_info(station_info)
                     station_name = station_info.get("name", "Unknown Station")
 
                     notification_title = f"Now Playing on {station_name}"
@@ -419,13 +499,175 @@ class AutoFetcher:
             time.sleep(sleep_time)
 
 
-def handle_user_choice_from_search_result(handler, response) -> Tuple[str, str]:
+def handle_user_choice_dropdown(
+    handler,
+    response: List[Dict[str, Any]],
+    player=None,
+    volume: int = 80,
+    loglevel: str = "info",
+    audio_player: str = "ffplay",
+    last_station=None,
+    history=None,
+    auto_fetcher=None,
+) -> Tuple[Optional[str], Optional[str]]:
     """
-    Handle user selection from search results.
+    Handle user selection from search results using an interactive dropdown picker.
+    Plays the selected station live in background. User can switch stations
+    and press 'Done / Back' when satisfied.
     """
     if not response:
         log.debug("No result found!")
         return None, None
+
+    current_playing_name: Optional[str] = None
+    current_playing_url: Optional[str] = None
+    current_playing_uuid: Optional[str] = None
+    temp_player = None
+
+    while True:
+        options = ["🔙 [ Done / Back to Main App ]"]
+        for idx, station in enumerate(response):
+            name = (station.get("name") or "Unknown Station").strip()
+            badges = []
+            country = (station.get("country") or "").strip()
+            if country and country.lower() not in ["", "none", "n/a"]:
+                badges.append(country)
+            codec = (station.get("codec") or "").strip()
+            bitrate = station.get("bitrate")
+            if codec or bitrate:
+                b_str = (
+                    f"{codec} {bitrate}k".strip()
+                    if (codec and bitrate)
+                    else (f"{codec}" if codec else f"{bitrate}k")
+                )
+                badges.append(b_str)
+            tags = (station.get("tags") or "").strip()
+            if tags:
+                tag_list = [t.strip() for t in tags.split(",") if t.strip()][:2]
+                if tag_list:
+                    badges.append(", ".join(tag_list))
+
+            badge_str = f" ({' • '.join(badges)})" if badges else ""
+            uuid = (
+                station.get("stationuuid")
+                or station.get("uuid_or_url")
+                or station.get("url", "")
+            )
+            is_active = (current_playing_uuid and uuid == current_playing_uuid) or (
+                current_playing_url
+                and (
+                    station.get("url_resolved") == current_playing_url
+                    or station.get("url") == current_playing_url
+                )
+            )
+
+            prefix = "▶ " if is_active else "📻 "
+            suffix = "  [Playing]" if is_active else ""
+            options.append(f"{prefix}{name}{badge_str}{suffix}")
+
+        title = (
+            f"📋 Search Results ({len(response)} stations) - Select a station to play in background:\n"
+            f"(Playing: {current_playing_name or 'None'}  •  Use Up/Down arrows and Enter to play, select 'Done' when happy)"
+        )
+
+        try:
+            _, index = pick(options, title, indicator="-->")
+        except (Exception, KeyboardInterrupt) as e:
+            log.debug(f"Dropdown search selection cancelled or interrupted: {e}")
+            break
+
+        if index == 0:
+            # User selected Done / Back
+            break
+
+        selected_station = response[index - 1]
+        uuid = selected_station.get("stationuuid") or selected_station.get(
+            "uuid_or_url"
+        )
+        if uuid:
+            new_name, new_url = handle_station_uuid_play(handler, uuid)
+        else:
+            new_name = selected_station.get("name", "Unknown Station")
+            new_url = selected_station.get("url_resolved") or selected_station.get(
+                "url"
+            )
+
+        if new_url:
+            current_playing_name = new_name
+            current_playing_url = new_url
+            current_playing_uuid = uuid
+
+            set_global_station_info(selected_station)
+            if last_station:
+                handle_save_last_station(last_station, new_name, new_url)
+            if history:
+                handle_save_to_history(history, new_name, new_url)
+            if auto_fetcher:
+                auto_fetcher.update_url(new_url)
+
+            # Switch playback immediately in background
+            if player:
+                player.stop()
+                player.url = new_url
+                player.play()
+            else:
+                if temp_player:
+                    temp_player.stop()
+                if audio_player == "vlc":
+                    from radioactive.vlc import VLC
+
+                    temp_player = VLC(volume)
+                    temp_player.start(new_url)
+                elif audio_player == "mpv":
+                    from radioactive.mpv import MPV
+
+                    temp_player = MPV(volume)
+                    temp_player.start(new_url)
+                else:
+                    from radioactive.ffplay import Ffplay
+
+                    temp_player = Ffplay(new_url, volume, loglevel)
+
+            log.info(f"▶ Switched playback in background to: {new_name}")
+
+    if temp_player:
+        temp_player.stop()
+
+    return current_playing_name, current_playing_url
+
+
+def handle_user_choice_from_search_result(
+    handler,
+    response,
+    player=None,
+    volume: int = 80,
+    loglevel: str = "info",
+    audio_player: str = "ffplay",
+    last_station=None,
+    history=None,
+    auto_fetcher=None,
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Handle user selection from search results according to preferred view (table or dropdown picker).
+    """
+    if not response:
+        log.debug("No result found!")
+        return None, None
+
+    from radioactive.actions import get_search_result_view
+
+    if get_search_result_view() == "dropdown":
+        return handle_user_choice_dropdown(
+            handler,
+            response,
+            player=player,
+            volume=volume,
+            loglevel=loglevel,
+            audio_player=audio_player,
+            last_station=last_station,
+            history=history,
+            auto_fetcher=auto_fetcher,
+        )
 
     if len(response) == 1:
         # single station found
@@ -468,9 +710,6 @@ def handle_user_choice_from_search_result(handler, response) -> Tuple[str, str]:
                 # pick a random integer within range (inclusive of last result)
                 user_input = randint(1, len(response))
                 log.debug(f"Random station id: {user_input}")
-            # elif user_input in ["f", "F", "fuzzy"]:
-            # fuzzy find all the stations, and return the selected station id
-            # user_input = fuzzy_find(response)
 
             user_input = int(user_input) - 1  # because ID starts from 1
             if user_input in range(0, len(response)):
@@ -624,7 +863,28 @@ def handle_listen_keypress(
             continue
 
         elif user_input in ["z", "Z", "zenmode"]:
-            handle_zen_mode()
+            current_vol = player.volume if player else volume
+            handle_zen_mode(volume=current_vol)
+            continue
+
+        elif user_input.strip() in [
+            ".",
+            "settings",
+            "setting",
+            "set",
+            "SETTINGS",
+            "SETTING",
+            "SET",
+        ]:
+            handle_settings()
+            if station_name and station_name != "N/A":
+                handle_current_play_panel(station_name)
+            continue
+
+        elif user_input in ["th", "TH", "theme", "THEME", "themes"]:
+            handle_theme_selection()
+            if station_name and station_name != "N/A":
+                handle_current_play_panel(station_name)
             continue
 
         elif TIMER_FEATURE and user_input in ["timer", "sleep"]:
@@ -785,7 +1045,11 @@ def handle_listen_keypress(
 
                 if query.strip():
                     temp_station_list = handle_search_stations(
-                        handler, query, limit=100, sort_by="votes", filter_with="none"
+                        handler,
+                        query,
+                        limit=get_search_limit(),
+                        sort_by="votes",
+                        filter_with="none",
                     )
                     if temp_station_list:
                         station_list = temp_station_list
@@ -793,7 +1057,15 @@ def handle_listen_keypress(
                         try:
                             new_station_name, new_target_url = (
                                 handle_user_choice_from_search_result(
-                                    handler, station_list
+                                    handler,
+                                    station_list,
+                                    player=player,
+                                    volume=volume,
+                                    loglevel=loglevel,
+                                    audio_player=audio_player,
+                                    last_station=last_station,
+                                    history=history,
+                                    auto_fetcher=auto_fetcher,
                                 )
                             )
                             if new_target_url:
@@ -801,10 +1073,11 @@ def handle_listen_keypress(
                                     if new_target_url == target_url:
                                         log.info("Station is already playing!")
                                         continue
-                                    # Stop current, switch
-                                    player.stop()
-                                    player.url = new_target_url
-                                    player.play()
+                                    if getattr(player, "url", None) != new_target_url:
+                                        # Stop current, switch (if not already switched by dropdown)
+                                        player.stop()
+                                        player.url = new_target_url
+                                        player.play()
                                 else:
                                     # Initialize player
                                     if audio_player == "vlc":
@@ -835,7 +1108,8 @@ def handle_listen_keypress(
                                 station_name = new_station_name
                                 station_url = new_target_url
                                 target_url = new_target_url
-                                auto_fetcher.update_url(target_url)
+                                if auto_fetcher:
+                                    auto_fetcher.update_url(target_url)
                         except SystemExit:
                             # handle_user_choice might try to exit on cancel
                             pass

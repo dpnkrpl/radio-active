@@ -284,6 +284,14 @@ class Parser:
             help="specify the audio player to use. ffplay/vlc/mpv",
         )
 
+        self.parser.add_argument(
+            "--theme",
+            action="store",
+            dest="theme",
+            default=self.defaults.get("theme", "default"),
+            help="specify the UI color theme (default, cyberpunk, matrix, amber, nordic)",
+        )
+
     def parse(self):
         self.result = self.parser.parse_args()
         if self.result is None:

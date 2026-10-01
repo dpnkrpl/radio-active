@@ -72,4 +72,50 @@ def parse_options() -> Dict[str, Any]:
     options["volume"] = args.volume
     options["audio_player"] = args.audio_player
 
+    options["theme"] = getattr(args, "theme", "default")
+    from radioactive.theme import set_current_theme
+
+    set_current_theme(options["theme"])
+
+    from radioactive.actions import (
+        set_desktop_notification_enabled,
+        set_search_limit,
+        set_search_result_view,
+    )
+    from radioactive.ui import (
+        set_default_zen_style,
+        set_zen_show_track,
+        set_zen_show_visualizer,
+        set_zen_show_volume,
+        set_zen_timer,
+    )
+
+    if "limit" in options and options["limit"]:
+        set_search_limit(options["limit"])
+
+    if hasattr(parser, "defaults") and parser.defaults:
+        defs = parser.defaults
+        if "visualizer" in defs:
+            set_default_zen_style(defs["visualizer"])
+        if "zen_show_volume" in defs:
+            set_zen_show_volume(
+                defs["zen_show_volume"].lower() in ["true", "1", "yes", "on"]
+            )
+        if "zen_show_track" in defs:
+            set_zen_show_track(
+                defs["zen_show_track"].lower() in ["true", "1", "yes", "on"]
+            )
+        if "zen_show_visualizer" in defs:
+            set_zen_show_visualizer(
+                defs["zen_show_visualizer"].lower() in ["true", "1", "yes", "on"]
+            )
+        if "zen_timer" in defs:
+            set_zen_timer(defs["zen_timer"])
+        if "notification" in defs:
+            set_desktop_notification_enabled(
+                defs["notification"].lower() in ["true", "1", "yes", "on"]
+            )
+        if "search_result_view" in defs:
+            set_search_result_view(defs["search_result_view"])
+
     return options

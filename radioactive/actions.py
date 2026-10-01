@@ -25,9 +25,59 @@ if RECORDING_FEATURE:
 
 from radioactive.last_station import Last_station
 
+_desktop_notification_enabled: bool = True
+_search_limit: int = 100
+_search_result_view: str = "table"
+
+
+def get_desktop_notification_enabled() -> bool:
+    """Get desktop notification enabled state."""
+    return _desktop_notification_enabled
+
+
+def set_desktop_notification_enabled(val: bool) -> bool:
+    """Set desktop notification enabled state."""
+    global _desktop_notification_enabled
+    _desktop_notification_enabled = bool(val)
+    return _desktop_notification_enabled
+
+
+def get_search_limit() -> int:
+    """Get search results count per table."""
+    return _search_limit
+
+
+def set_search_limit(val: Any) -> int:
+    """Set search results count per table."""
+    global _search_limit
+    try:
+        _search_limit = max(1, int(val))
+    except (ValueError, TypeError):
+        _search_limit = 100
+    return _search_limit
+
+
+def get_search_result_view() -> str:
+    """Get preferred search result view ('table' or 'dropdown')."""
+    return _search_result_view
+
+
+def set_search_result_view(val: str) -> str:
+    """Set preferred search result view ('table' or 'dropdown')."""
+    global _search_result_view
+    clean_val = str(val).strip().lower()
+    if clean_val in ["dropdown", "picker", "drop_down", "menu"]:
+        _search_result_view = "dropdown"
+    else:
+        _search_result_view = "table"
+    return _search_result_view
+
 
 def handle_notification(title: str, message: str, icon: str = None) -> None:
     """Send a desktop notification on Linux."""
+    if not _desktop_notification_enabled:
+        return
+
     from shutil import which
 
     from radioactive.paths import get_logo_path
@@ -102,6 +152,15 @@ def handle_fetch_song_title(url: str) -> None:
 
     if track_name != "":
         log.info(f"🎶: {track_name}")
+        try:
+            from radioactive.ui import get_global_station_info, set_global_station_info
+
+            info = get_global_station_info()
+            info["track"] = track_name
+            info["title"] = track_name
+            set_global_station_info(info)
+        except Exception:
+            pass
     else:
         log.error("No track information available")
 
@@ -722,3 +781,465 @@ def handle_recording_library() -> Tuple[Optional[str], Optional[str]]:
         elif action_idx == 4:
             # Back
             continue
+
+
+def handle_theme_selection() -> Optional[str]:
+    """
+    Interactive UI theme selector.
+    Allows user to switch the active theme at runtime and save preference.
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+    from radioactive.theme import get_current_theme, set_current_theme
+
+    current = get_current_theme().name
+
+    theme_list = [
+        ("default", "🎨 Default (Classic Magenta / Cyan)"),
+        ("cyberpunk", "⚡ Cyberpunk / Neon (Electric Cyan / Hot Pink)"),
+        ("matrix", "📟 Matrix (Phosphor Green / Black)"),
+        ("amber", "📻 Amber / Retro Hi-Fi (Warm Amber / Gold)"),
+        ("nordic", "❄️  Nordic / Pastel (Ice Blue / Slate Frost)"),
+    ]
+
+    title = "🎨 UI Theme Selector - Select a color theme:\n(Use Up/Down arrows and Enter to apply)"
+    options = ["🔙 [ Cancel / Back ]"]
+    for code, label in theme_list:
+        if code == current:
+            options.append(f"{label}  [active]")
+        else:
+            options.append(label)
+
+    try:
+        _, index = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Theme selection cancelled or error: {e}")
+        return None
+
+    if index == 0:
+        return None
+
+    selected_code = theme_list[index - 1][0]
+    set_current_theme(selected_code)
+    try:
+        save_config_option("theme", selected_code)
+    except Exception:
+        pass
+    log.info(f"Theme switched to: {selected_code.capitalize()}")
+    return selected_code
+
+
+def handle_visualizer_selection() -> Optional[int]:
+    """
+    Interactive Default Visualizer Selector.
+    Allows user to choose the default visualizer style for Zen Mode.
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+    from radioactive.ui import (
+        get_default_zen_style,
+        get_zen_visualizer_styles,
+        set_default_zen_style,
+    )
+
+    styles = get_zen_visualizer_styles()
+    current_idx = get_default_zen_style()
+
+    title = "📊 Default Visualizer - Select the default Zen visualizer style:\n(Use Up/Down arrows and Enter to apply)"
+    options = ["🔙 [ Cancel / Back ]"]
+    for idx, name in enumerate(styles):
+        label = f"{idx + 1}. {name}"
+        if idx == current_idx:
+            options.append(f"{label}  [active]")
+        else:
+            options.append(label)
+
+    try:
+        _, index = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Visualizer selection cancelled or error: {e}")
+        return None
+
+    if index == 0:
+        return None
+
+    selected_idx = index - 1
+    set_default_zen_style(selected_idx)
+    try:
+        save_config_option("visualizer", str(selected_idx))
+    except Exception:
+        pass
+    log.info(f"Default visualizer set to: {styles[selected_idx]}")
+    return selected_idx
+
+
+def handle_zen_mode_configuration() -> None:
+    """
+    Interactive Zen Mode Configuration Menu.
+    Allows configuring:
+    - Show volume (ON/OFF)
+    - Show track info (ON/OFF)
+    - Show visualizer (ON/OFF)
+    - Default zenmode inactivity timer (duration)
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+    from radioactive.ui import (
+        get_zen_show_track,
+        get_zen_show_visualizer,
+        get_zen_show_volume,
+        get_zen_timer,
+        set_zen_show_track,
+        set_zen_show_visualizer,
+        set_zen_show_volume,
+        set_zen_timer,
+    )
+
+    while True:
+        show_vol = get_zen_show_volume()
+        show_trk = get_zen_show_track()
+        show_vis = get_zen_show_visualizer()
+        timer_val = get_zen_timer()
+
+        timer_display = f"{int(timer_val)}s" if timer_val > 0 else "Disabled"
+
+        options = [
+            "🔙 [ Back to Settings ]",
+            f"🔊 Show Volume:        [{'ON' if show_vol else 'OFF'}]",
+            f"🎵 Show Track Info:    [{'ON' if show_trk else 'OFF'}]",
+            f"📊 Show Visualizer:    [{'ON' if show_vis else 'OFF'}]",
+            f"⏱️  Default Zen Timer:  [{timer_display}]",
+        ]
+
+        title = "🧘 Zen Mode Configuration - Select an option to configure:\n(Use Up/Down arrows and Enter to toggle/modify)"
+
+        try:
+            _, index = pick(options, title, indicator="-->")
+        except (Exception, KeyboardInterrupt) as e:
+            log.debug(f"Zen mode configuration cancelled: {e}")
+            break
+
+        if index == 0:
+            break
+        elif index == 1:
+            new_val = not show_vol
+            set_zen_show_volume(new_val)
+            try:
+                save_config_option("zen_show_volume", "true" if new_val else "false")
+            except Exception:
+                pass
+            log.info(f"Zen Mode Show Volume: {'Enabled' if new_val else 'Disabled'}")
+        elif index == 2:
+            new_val = not show_trk
+            set_zen_show_track(new_val)
+            try:
+                save_config_option("zen_show_track", "true" if new_val else "false")
+            except Exception:
+                pass
+            log.info(
+                f"Zen Mode Show Track Info: {'Enabled' if new_val else 'Disabled'}"
+            )
+        elif index == 3:
+            new_val = not show_vis
+            set_zen_show_visualizer(new_val)
+            try:
+                save_config_option(
+                    "zen_show_visualizer", "true" if new_val else "false"
+                )
+            except Exception:
+                pass
+            log.info(
+                f"Zen Mode Show Visualizer: {'Enabled' if new_val else 'Disabled'}"
+            )
+        elif index == 4:
+            timer_options = [
+                "🔙 [ Back / Keep Current ]",
+                "⏱️  15 Seconds (Default)",
+                "⏱️  30 Seconds",
+                "⏱️  60 Seconds (1 Minute)",
+                "⏱️  120 Seconds (2 Minutes)",
+                "⏱️  300 Seconds (5 Minutes)",
+                "🚫 Disable Inactivity Auto-Zen (0s)",
+                "✏️  Custom Duration...",
+            ]
+            t_title = f"⏱️  Select Default Inactivity Timer (Current: {timer_display}):"
+            try:
+                _, t_idx = pick(timer_options, t_title, indicator="-->")
+            except (Exception, KeyboardInterrupt):
+                continue
+
+            if t_idx == 0:
+                continue
+            elif t_idx == 1:
+                chosen = 15.0
+            elif t_idx == 2:
+                chosen = 30.0
+            elif t_idx == 3:
+                chosen = 60.0
+            elif t_idx == 4:
+                chosen = 120.0
+            elif t_idx == 5:
+                chosen = 300.0
+            elif t_idx == 6:
+                chosen = 0.0
+            elif t_idx == 7:
+                try:
+                    user_str = input(
+                        "Enter inactivity timer duration in seconds (0 to disable): "
+                    )
+                    chosen = max(0.0, float(user_str))
+                except (ValueError, TypeError, EOFError, KeyboardInterrupt):
+                    log.error("Invalid timer duration entered.")
+                    continue
+
+            set_zen_timer(chosen)
+            try:
+                save_config_option("zen_timer", str(chosen))
+            except Exception:
+                pass
+            log.info(f"Zen Mode default inactivity timer set to: {chosen}s")
+
+
+def handle_view_release_notes() -> None:
+    """
+    Check for updates and display future version release notes if available.
+    """
+    from rich.align import Align
+    from rich.console import Console
+    from rich.panel import Panel
+
+    from radioactive.app import App
+    from radioactive.theme import get_current_theme
+
+    theme = get_current_theme()
+    console = Console()
+    app = App()
+
+    has_update = False
+    local_version = app.get_version()
+    remote_version = local_version
+    release_notes = None
+
+    try:
+        with console.status(
+            "[bold cyan]Checking for updates and release notes...", spinner="dots"
+        ):
+            has_update = app.is_update_available()
+            local_version = app.get_version()
+            remote_version = app.get_remote_version()
+            release_notes = app.get_release_notes(local_version, remote_version)
+    except Exception as e:
+        log.debug(f"Error fetching release notes: {e}")
+
+    if has_update:
+        msg = (
+            f"[bold {theme.success}]🚀 A newer version of radio-active is available![/bold {theme.success}]\n\n"
+            f"Installed version: [{theme.warning}]v{local_version}[/{theme.warning}]\n"
+            f"Latest version:    [bold {theme.success}]v{remote_version}[/bold {theme.success}]\n\n"
+            f"To upgrade, run:\n  [bold cyan]pipx upgrade radio-active[/bold cyan] (or [italic]pip install -U radio-active[/italic])\n"
+        )
+        if release_notes:
+            msg += f"\n[bold {theme.warning}]What's new in future version(s):[/bold {theme.warning}]\n{release_notes}\n"
+        else:
+            msg += "\nFull changelog: https://github.com/dpnkrpl/radio-active/blob/main/CHANGELOG.md\n"
+        title = f"[{theme.title_style}]🚀 Future Release Notes (v{remote_version})[/{theme.title_style}]"
+    else:
+        msg = (
+            f"[bold {theme.success}]✨ You are on the latest version of radio-active![/bold {theme.success}]\n\n"
+            f"Current version: [bold {theme.primary}]v{local_version}[/{theme.primary}]\n\n"
+        )
+        if release_notes:
+            msg += f"[bold {theme.warning}]Release notes:[/bold {theme.warning}]\n{release_notes}\n\n"
+        else:
+            msg += "No unreleased future version notes detected.\n\n"
+        msg += "View full changelog and roadmaps at:\nhttps://github.com/dpnkrpl/radio-active/blob/main/CHANGELOG.md\n"
+        title = f"[{theme.title_style}]📦 Version & Release Information (v{local_version})[/{theme.title_style}]"
+
+    try:
+        with console.screen():
+            panel = Panel(
+                msg,
+                title=title,
+                subtitle="Press Enter to return to settings",
+                border_style=theme.border,
+                padding=(1, 4),
+                width=100,
+                expand=False,
+            )
+            console.print("\n" * 3)
+            console.print(Align.center(panel))
+            try:
+                console.input()
+            except (EOFError, KeyboardInterrupt):
+                pass
+    except Exception as e:
+        log.error(f"Error displaying release notes: {e}")
+
+
+def handle_search_limit_configuration() -> None:
+    """
+    Interactive Search Results Count Per Table Configuration.
+    Allows user to select or enter the max results displayed per search table.
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+
+    current_limit = get_search_limit()
+
+    options = [
+        "🔙 [ Back / Keep Current ]",
+        "🔟 10 Results",
+        "📄 25 Results",
+        "📑 50 Results",
+        "📚 100 Results (Default)",
+        "📊 200 Results",
+        "🌐 500 Results",
+        "✏️  Custom Count...",
+    ]
+
+    title = f"🔍 Search Results Count Per Table (Current: {current_limit}):\n(Use Up/Down arrows and Enter to select)"
+
+    try:
+        _, idx = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Search limit selection cancelled: {e}")
+        return
+
+    if idx == 0:
+        return
+    elif idx == 1:
+        chosen = 10
+    elif idx == 2:
+        chosen = 25
+    elif idx == 3:
+        chosen = 50
+    elif idx == 4:
+        chosen = 100
+    elif idx == 5:
+        chosen = 200
+    elif idx == 6:
+        chosen = 500
+    elif idx == 7:
+        try:
+            val_str = input("Enter search results count per table (e.g. 50): ")
+            chosen = max(1, int(val_str))
+        except (ValueError, TypeError, EOFError, KeyboardInterrupt):
+            log.error("Invalid search limit entered.")
+            return
+
+    set_search_limit(chosen)
+    try:
+        save_config_option("limit", str(chosen))
+    except Exception:
+        pass
+    log.info(f"Search results count per table set to: {chosen}")
+
+
+def handle_search_result_view_configuration() -> None:
+    """
+    Interactive Preferred Search Result View Selector.
+    Allows user to choose between:
+    a. Table View (Numbered list & prompt)
+    b. Dropdown Picker (Interactive station selector with live background playback)
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+
+    current_view = get_search_result_view()
+    title = (
+        f"📋 Preferred Search Result View (Current: {'Table' if current_view == 'table' else 'Dropdown Picker'}):\n"
+        "(Use Up/Down arrows and Enter to select)"
+    )
+    options = [
+        "🔙 [ Back / Keep Current ]",
+        f"📊 1. Table View (Numbered list & prompt){'  [active]' if current_view == 'table' else ''}",
+        f"📋 2. Dropdown Picker (Interactive live preview){'  [active]' if current_view == 'dropdown' else ''}",
+    ]
+
+    try:
+        _, idx = pick(options, title, indicator="-->")
+    except (Exception, KeyboardInterrupt) as e:
+        log.debug(f"Search view selection cancelled: {e}")
+        return
+
+    if idx == 0:
+        return
+    elif idx == 1:
+        chosen = "table"
+    elif idx == 2:
+        chosen = "dropdown"
+
+    set_search_result_view(chosen)
+    try:
+        save_config_option("search_result_view", chosen)
+    except Exception:
+        pass
+    log.info(
+        f"Preferred search result view set to: {'Table View' if chosen == 'table' else 'Dropdown Picker'}"
+    )
+
+
+def handle_settings() -> None:
+    """
+    Interactive Settings Hub.
+    Provides a picker menu to configure:
+    1. Theme (move theme to settings)
+    2. Default visualizer
+    3. Configure zenmode (show volume, show track info, show visualizer, default timer)
+    4. Desktop notification (notify-send) [ON/OFF]
+    5. Search results count per table
+    6. Preferred search result view (Table view / Dropdown picker)
+    """
+    from pick import pick
+
+    from radioactive.config import save_config_option
+
+    while True:
+        notif_state = "ON" if get_desktop_notification_enabled() else "OFF"
+        search_limit = get_search_limit()
+        view_state = (
+            "Table View" if get_search_result_view() == "table" else "Dropdown Picker"
+        )
+
+        title = "⚙️  Radioactive Settings - Select a category to configure:\n(Use Up/Down arrows and Enter to select)"
+        options = [
+            "🔙 [ Back / Return ]",
+            "🎨 1. Theme Selection",
+            "📊 2. Default Visualizer",
+            "🧘 3. Configure Zen Mode",
+            f"🔔 4. Desktop Notifications: [{notif_state}]",
+            f"🔍 5. Search Results Count Per Table: [{search_limit}]",
+            f"📋 6. Preferred Search Result View: [{view_state}]",
+        ]
+
+        try:
+            _, index = pick(options, title, indicator="-->")
+        except (Exception, KeyboardInterrupt) as e:
+            log.debug(f"Settings cancelled: {e}")
+            break
+
+        if index == 0:
+            break
+        elif index == 1:
+            handle_theme_selection()
+        elif index == 2:
+            handle_visualizer_selection()
+        elif index == 3:
+            handle_zen_mode_configuration()
+        elif index == 4:
+            new_notif = not get_desktop_notification_enabled()
+            set_desktop_notification_enabled(new_notif)
+            try:
+                save_config_option("notification", "true" if new_notif else "false")
+            except Exception:
+                pass
+            log.info(f"Desktop notifications: {'Enabled' if new_notif else 'Disabled'}")
+        elif index == 5:
+            handle_search_limit_configuration()
+        elif index == 6:
+            handle_search_result_view_configuration()

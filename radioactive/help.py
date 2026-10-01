@@ -8,9 +8,12 @@ def show_help():
     from rich.console import Console
     from rich.table import Table
 
+    from radioactive.theme import get_current_theme
+
+    theme = get_current_theme()
     console = Console()
 
-    table = Table(show_header=True, header_style="bold magenta")
+    table = Table(show_header=True, header_style=theme.header_style)
     table.add_column("Arguments", justify="left")
     table.add_column("Description", justify="left")
     table.add_column("Default", justify="center")
@@ -154,6 +157,12 @@ def show_help():
         "--player",
         "Media player to use. vlc/mpv/ffplay",
         "ffplay",
+    )
+
+    table.add_row(
+        "--theme",
+        "UI color theme: default, cyberpunk, matrix, amber, nordic",
+        "default",
     )
 
     console.print(table)

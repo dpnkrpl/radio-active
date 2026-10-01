@@ -1,3 +1,7 @@
+## 4.1.1
+
+1. Dynamic ASCII audio spectrum visualizer in Zen mode 🧘✨
+
 ## 4.1.0
 
 1. Significant improvements on app loading speed :zap:
