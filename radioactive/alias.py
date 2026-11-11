@@ -44,7 +44,7 @@ class Alias:
                     self.alias_dict = {}
                     for alias in alias_list:
                         if "==" in alias:
-                            temp = alias.split("==")
+                            temp = alias.split("==", 1)
                             left = temp[0].strip()
                             right = temp[1].strip()
                             entry = {"name": left, "uuid_or_url": right}
